@@ -328,3 +328,42 @@ body.pc .composer{bottom:16px}
 .tpdot{position:absolute;left:126px;top:126px;width:8px;height:8px;border-radius:50%;background:var(--acc);z-index:1}
 .tphint{font-size:13px;color:var(--muted);text-align:center}
 .tpbox .row2 .btn2{height:42px}
+
+/* =================== Питание и тренировки =================== */
+.hrow .hlead{width:24px;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding-top:1px}
+.hdot{width:24px;height:24px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.hdot svg.i{width:20px;height:20px}
+.hrow .iconbtn{flex-shrink:0;align-self:center}
+.hdate{font-size:13px;color:var(--muted);margin:10px 0 0}
+.hsum{margin-top:14px;border:1px solid var(--line);border-radius:14px;background:var(--surf);padding:14px 16px}
+.hsum .hk{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.hsum .hk b{font-family:var(--display);font-size:34px;font-weight:600;line-height:1}
+.hsum .hk span{color:var(--muted);font-size:14px}
+.hsum .hk .link{margin-left:auto;font-size:13px}
+.hbar{height:6px;border-radius:3px;background:var(--soft);margin-top:10px;overflow:hidden}
+.hbar i{display:block;height:100%;background:var(--acc);border-radius:3px}
+.hmac{display:flex;gap:18px;margin-top:12px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+.hmac b{color:var(--ink);font-size:16px;font-weight:600;margin-right:2px}
+.hchart{width:100%;height:110px;margin-top:10px;color:var(--ink)}
+.hrange{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+.hadd-form{display:flex;gap:8px;margin-top:16px;align-items:stretch}
+.hadd-form .fld{flex:1;min-width:0}
+.hadd-form .hq{flex:0 0 84px}
+.hadd-form .hu{flex:0 0 72px;padding:0 8px}
+.hadd-form .btn{flex:0 0 50px;padding:0}
+.hphotos{display:flex;gap:8px;flex-wrap:wrap}
+.hph{position:relative;width:92px;height:92px;border-radius:12px;overflow:hidden;background:var(--soft)}
+.hph img{width:100%;height:100%;object-fit:cover;display:block}
+.hph button{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;display:flex;align-items:center;justify-content:center}
+.hph button svg.i{width:14px;height:14px}
+.hadd{width:92px;height:92px;border-radius:12px;border:1.5px dashed var(--faint);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:11.5px;color:var(--muted);text-align:center;cursor:pointer;padding:4px}
+.hnote{font-size:13.5px;line-height:1.5;color:var(--muted);background:var(--soft);border-radius:12px;padding:10px 12px}
+.herr{font-size:13.5px;line-height:1.5;color:var(--warn);border:1px solid var(--warn);border-radius:12px;padding:10px 12px}
+.hrec{border:1px solid var(--line);border-radius:14px;background:var(--surf);padding:14px 16px}
+.hrec b{font-size:17px}
+.hrec ol{margin:10px 0 6px;padding-left:20px;line-height:1.5;font-size:14.5px}
+.hing{display:flex;flex-wrap:wrap;gap:6px}
+.hing span{font-size:13px;background:var(--soft);border-radius:10px;padding:3px 9px}
+.hing span.miss{background:transparent;border:1px dashed var(--warn);color:var(--warn)}
+.hrow.plan .tt{color:var(--muted)}
+.sb>*{flex-shrink:0}

@@ -98,6 +98,7 @@ async function loadAll(){
   D.marks={};res[6].forEach(function(m){(D.marks[m.habit_id]=D.marks[m.habit_id]||{})[m.day]=m.count;});
   D.notes=res[7];D.templates=res[8];D.nmembers=res[9]||[];
   var me=prof(ME);SET=Object.assign(JSON.parse(JSON.stringify(SET_DEF)),(me&&me.settings)||{});SET.def=Object.assign({},SET_DEF.def,SET.def||{});
+  if(window.HEALTH)await HEALTH.load();
 }
 var reloadTimer=null;
 function reloadSoon(){clearTimeout(reloadTimer);reloadTimer=setTimeout(function(){loadAll().then(render).catch(function(){});},400);}
@@ -599,7 +600,7 @@ async function asAddTask(mi,ti){var m=AS.msgs[mi],t=m&&m.tasks[ti];if(!t||t._add
 function sidebar(){
   var nav=function(v,icn,t,n){return '<button class="'+(UI.view===v&&(v!=='tasks'||UI.filter==='all')?'on':'')+'" data-a="go" data-v="'+v+'">'+I(icn)+'<span class="l">'+t+'</span>'+(n?'<span class="n">'+n+'</span>':'')+'</button>';};
   var todayN=myTasks().filter(function(t){return !t.done&&!hiddenTask(t)&&groupOf(t)==='today';}).length;
-  var h='<div class="logo" style="padding:0 12px"><b>'+I('check')+'</b>задачи</div><div class="nav">'+nav('tasks','sun','Задачи',todayN||'')+nav('inbox','inbox','Входящие',inbox().length||'')+nav('calendar','cal','Календарь')+nav('habits','drop','Привычки')+nav('diary','book','Дневник')+nav('notes','note','Заметки')+nav('assistant','spark','Помощник')+'</div>';
+  var h='<div class="logo" style="padding:0 12px"><b>'+I('check')+'</b>задачи</div><div class="nav">'+nav('tasks','sun','Задачи',todayN||'')+nav('inbox','inbox','Входящие',inbox().length||'')+nav('calendar','cal','Календарь')+nav('habits','drop','Привычки')+nav('food','leaf','Питание')+nav('fit','dumb','Тренировки')+nav('diary','book','Дневник')+nav('notes','note','Заметки')+nav('assistant','spark','Помощник')+'</div>';
   var own=D.lists.filter(function(l){return !isShared(l);}),sh=D.lists.filter(isShared);
   var li=function(l){var n=myTasks().filter(function(t){return t.list_id===l.id&&!t.done;}).length;return '<button class="'+(UI.view==='tasks'&&UI.filter===l.id?'on':'')+'" data-a="filter" data-v="'+l.id+'"><i class="dot" style="--c:'+esc(l.color)+'"></i><span class="l">'+esc(l.name)+'</span><span class="n">'+(l.hidden?I('eyeoff'):'')+(n||'')+'</span></button>';};
   h+='<div class="nav"><div class="t">Списки</div>'+own.map(li).join('')+'<button data-a="listNew">'+I('plus')+'<span class="l">Новый список</span></button></div>';
@@ -615,10 +616,10 @@ function bottomNav(){
 function moreView(){
   var n=inbox().length;
   var r=function(v,icn,t,x){return '<button class="lrow" data-a="go" data-v="'+v+'">'+I(icn)+'<b>'+t+'</b>'+(x||'')+I('right')+'</button>';};
-  return '<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">Ещё</h1></div></div><div class="fields" style="margin-top:18px">'+r('inbox','inbox','Входящие',n?'<span class="badge">'+n+'</span>':'')+r('habits','drop','Привычки')+r('diary','book','Дневник')+'<button class="lrow" data-a="lists">'+I('list')+'<b>Списки</b>'+I('right')+'</button><button class="lrow" data-a="settings">'+I('gear')+'<b>Настройки</b>'+I('right')+'</button></div>';
+  return '<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">Ещё</h1></div></div><div class="fields" style="margin-top:18px">'+r('inbox','inbox','Входящие',n?'<span class="badge">'+n+'</span>':'')+r('habits','drop','Привычки')+r('food','leaf','Питание')+r('fit','dumb','Тренировки')+r('diary','book','Дневник')+'<button class="lrow" data-a="lists">'+I('list')+'<b>Списки</b>'+I('right')+'</button><button class="lrow" data-a="settings">'+I('gear')+'<b>Настройки</b>'+I('right')+'</button></div>';
 }
 function mainContent(){
-  switch(UI.view){case'inbox':return inboxView();case'calendar':return calView();case'diary':return diaryView();case'habits':return habitsView();case'notes':return notesView();case'more':return moreView();case'assistant':return assistantView();default:return tasksView();}
+  switch(UI.view){case'inbox':return inboxView();case'calendar':return calView();case'diary':return diaryView();case'habits':return habitsView();case'food':return window.HEALTH?HEALTH.foodView():'';case'fit':return window.HEALTH?HEALTH.fitView():'';case'notes':return notesView();case'more':return moreView();case'assistant':return assistantView();default:return tasksView();}
 }
 function render(){
   if(!ME)return;
@@ -866,6 +867,7 @@ function renderSheet(first){
   else if(s.type==='list-edit'){title=s.id?'Список':'Новый список';body=listForm(s);foot='<button class="btn" data-a="saveList">'+(s.id?'Сохранить':'Создать список')+'</button>'+(s.id&&s.owner===ME?'<button class="btn2 warn" data-a="delList">Удалить список</button>':'')+(s.id&&s.owner!==ME?'<button class="btn2 warn" data-a="leaveList">Выйти из общего списка</button>':'');}
   else if(s.type==='note-share'){var nn=findNote(s.id);title='Поделиться заметкой';body='<div style="font-size:17px;font-weight:600">'+esc(nn&&nn.title||'Без названия')+'</div><div class="chips">'+others().map(function(p){var on=s.members.indexOf(p.id)>=0;return '<button class="chip'+(on?' on':'')+'" data-a="nmember" data-v="'+p.id+'">'+I('users')+esc(p.name||p.email)+'</button>';}).join('')+'</div><div class="gh">Отмеченные увидят заметку у себя в «Заметках» и смогут её дописывать. Удалить её сможешь только ты.</div>';foot='<button class="btn" data-a="saveNoteShare">Сохранить</button>';}
   else if(s.type==='pass'){title='Сменить пароль';body='<label><div class="gl">Новый пароль, минимум 8 символов</div><input class="fld" id="p1" type="password" autocomplete="new-password" minlength="8"></label><label><div class="gl">Ещё раз</div><input class="fld" id="p2" type="password" autocomplete="new-password" minlength="8"></label><div class="err" id="perr"></div>';foot='<button class="btn" data-a="passSave">Сохранить пароль</button>';}
+  else if(String(s.type).indexOf('h-')===0&&window.HEALTH){var hs=HEALTH.sheet(s);title=hs.title;body=hs.body;foot=hs.foot||'';}
   else if(s.type==='settings'){title='Настройки';body=settingsForm();foot='<button class="btn2 warn" data-a="logout">'+I('out')+'Выйти из аккаунта</button>';}
   root.innerHTML='<div class="ov" data-a="ovClose"><div class="sh" role="dialog" aria-modal="true" aria-label="'+esc(title)+'"><div class="hd"><h3>'+esc(title)+'</h3><button class="iconbtn" data-a="close" aria-label="Закрыть">'+I('x')+'</button></div><div class="sb">'+body+'</div>'+(foot?'<div class="sf">'+foot+'</div>':'')+'</div></div>';
   root.querySelector('.sb').scrollTop=prev;
@@ -1155,5 +1157,11 @@ sb.auth.onAuthStateChange(function(ev,session){
 });
 applyTheme();
 start();
-window.__app={A:A,UI:UI,D:D,parseQuick:parseQuick,nextOcc:nextOcc};
+window.__app={A:A,UI:UI,D:D,parseQuick:parseQuick,nextOcc:nextOcc,
+  /* для health.js («Питание» и «Тренировки») */
+  T:T,addDays:addDays,diff:diff,fromKey:fromKey,fmtLong:fmtLong,fmtDM:fmtDM,dayWord:dayWord,esc:esc,uid:uid,plural:plural,I:I,nowHM:nowHM,
+  toast:toast,err:err,q:q,sb:sb,SUPA_URL:SUPA_URL,SUPA_KEY:SUPA_KEY,render:render,renderSheet:renderSheet,closeSheet:closeSheet,
+  createTask:createTask,patchTask:patchTask,completeTask:completeTask,reopenTask:reopenTask,deleteTask:deleteTask,findTask:findTask,saveSettings:saveSettings};
+Object.defineProperty(window.__app,'ME',{get:function(){return ME;}});
+Object.defineProperty(window.__app,'SET',{get:function(){return SET;}});
 })();
