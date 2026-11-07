@@ -67,18 +67,25 @@
   /* виджет рабочего стола: дела на сегодня и просроченные + привычки на сегодня */
   var WB = plug('WidgetBridge'), wSig = '';
   function widgetData() {
-    var today = X.T(), items = [];
-    X.D.tasks.forEach(function (t) {
-      if (t.done || t.status === 'done' || t.status === 'archived' || !t.due_date || t.due_date > today) return;
-      items.push({ t: t.title, m: (t.due_date < today ? 'просрочено' : '') + (t.due_date === today && t.due_time ? t.due_time : ''), o: t.due_date < today, h: false, k: (t.due_date < today ? '0' : '1') + (t.due_time || '99') });
-    });
+    var today = X.T(), tasks = [], habits = [], cal = [];
+    var WDN = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'], MN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'], WS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+    function live(t) { return !(t.done || t.status === 'done' || t.status === 'archived'); }
+    function tk(t, over) { return { id: t.id, t: t.title, m: over ? 'просрочено' : (t.due_time || ''), o: !!over, rec: !!(t.recur && t.recur !== 'none'), lid: t.list_id || null, k: (over ? '0' : '1') + (t.due_time || '99') }; }
+    X.D.tasks.forEach(function (t) { if (!live(t) || !t.due_date || t.due_date > today) return; tasks.push(tk(t, t.due_date < today)); });
+    tasks.sort(function (a, b) { return a.k < b.k ? -1 : a.k > b.k ? 1 : 0; });
     var hs = X.D.habits.slice(); if (window.WELL && WELL.habits) WELL.habits().forEach(function (h) { hs.push(h); });
-    hs.forEach(function (h) { if (h.paused || h.finished || !X.sched(h, today) || X.cnt(h, today) >= X.tgt(h)) return; items.push({ t: h.name, m: h.remind || '', o: false, h: true, k: '1' + (h.remind || '99') }); });
-    items.sort(function (a, b) { return a.k < b.k ? -1 : a.k > b.k ? 1 : 0; });
-    var d = new Date(), WDN = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'], MN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
-    return { date: WDN[d.getDay()] + ', ' + d.getDate() + ' ' + MN[d.getMonth()], items: items.slice(0, 40).map(function (x) { return { t: x.t, m: x.m, o: x.o, h: x.h }; }) };
-  }
-  async function widgetSync() {
+    hs.forEach(function (h) { if (h.paused || h.finished || !X.sched(h, today)) return; habits.push({ id: h.id, t: h.name, m: h.remind || '', c: X.cnt(h, today), n: X.tgt(h) }); });
+    for (var i = 0; i < 14; i++) {
+      var day = X.addDays(today, i), its = [];
+      X.D.tasks.forEach(function (t) { if (live(t) && t.due_date === day) its.push(tk(t, false)); });
+      if (!its.length) continue;
+      its.sort(function (a, b) { return a.k < b.k ? -1 : a.k > b.k ? 1 : 0; });
+      var dd = new Date(day + 'T00:00:00');
+      cal.push({ d: i === 0 ? 'Сегодня' : i === 1 ? 'Завтра' : WS[dd.getDay()] + ', ' + dd.getDate() + ' ' + MN[dd.getMonth()], items: its.slice(0, 20) });
+    }
+    var d = new Date();
+    return { date: WDN[d.getDay()] + ', ' + d.getDate() + ' ' + MN[d.getMonth()], tasks: tasks.slice(0, 40), habits: habits.slice(0, 40), cal: cal };
+  }  async function widgetSync() {
     if (!WB || !X.ME || !X.D.profiles.length) return;
     try { var j = JSON.stringify(widgetData()); if (j === wSig) return; await WB.update({ json: j }); wSig = j; } catch (e) { /* виджет не установлен или плагин недоступен */ }
   }
@@ -104,7 +111,11 @@
   async function widgetSync2() {
     if (!WB) { ST.widget = 'плагин виджета не найден'; return; }
     if (!X.ME || !X.D.profiles.length) return;
-    try { var j = JSON.stringify(widgetData()); if (j === wSig) return; await tmo(WB.update({ json: j }), 8000, 'виджет'); wSig = j; ST.widget = 'ок, дел: ' + JSON.parse(j).items.length; }
+    try {
+      var dd = widgetData(), ses = await X.sb.auth.getSession(), s = ses && ses.data && ses.data.session;
+      if (s && s.access_token) dd.auth = { url: X.SUPA_URL, key: X.SUPA_KEY, token: s.access_token, uid: X.ME };
+      var j = JSON.stringify(dd); if (j === wSig) return; await tmo(WB.update({ json: j }), 8000, 'виджет'); wSig = j; ST.widget = 'ок: дел ' + dd.tasks.length + ', привычек ' + dd.habits.length + (dd.auth ? ', отметки из виджета включены' : '');
+    }
     catch (e) { ST.widget = 'ошибка: ' + (e && e.message || e); }
   }
   widgetSync = widgetSync2;
@@ -130,6 +141,32 @@
     ST.back = 'ок';
   }
   try { setupBack(); } catch (e) { ST.back = 'ошибка: ' + (e && e.message || e); }
+
+  /* действия, нажатые в виджете и не записанные им в базу (нет сети, повторяющаяся задача), и «открыть задачу» */
+  var pulling = false;
+  async function pullPending() {
+    if (pulling || !WB) return; pulling = true;
+    try {
+      var r = await tmo(WB.takePending(), 5000, 'виджет'), ops = (r && r.ops) || [];
+      if (!ops.length) return;
+      for (var w = 0; w < 60 && !(X.ME && X.D.profiles.length); w++) await new Promise(function (rs) { setTimeout(rs, 500); });
+      for (var i = 0; i < ops.length; i++) {
+        var op = ops[i], t = X.findTask && X.findTask(op.id);
+        if (op.type === 'done' && t && !t.done) await X.completeTask(op.id);
+        else if (op.type === 'mark') { var hs = X.D.habits.concat((window.WELL && WELL.habits && WELL.habits()) || []), h = hs.filter(function (x) { return x.id === op.id; })[0]; if (h && X.cnt(h, X.T()) < X.tgt(h)) await X.setMark(h, X.T(), X.cnt(h, X.T()) + 1); }
+        else if (op.type === 'open') {
+          if (op.kind === 'task' && t) X.A.open(null, op.id);
+          else if (op.kind === 'habit') X.A.habOpen(null, op.id);
+          else if (op.kind === 'add') X.A.add();
+        }
+      }
+      sync(true); widgetSync();
+    } catch (e) { /* пропустим */ } finally { pulling = false; }
+  }
+  setInterval(function () { if (!document.hidden) pullPending(); }, 3000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) pullPending(); });
+  window.addEventListener('focus', pullPending);
+  setTimeout(pullPending, 2500);
 
   async function init() {
     LN.addListener('localNotificationActionPerformed', async function (ev) {
