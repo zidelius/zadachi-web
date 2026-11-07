@@ -20,23 +20,64 @@ self.addEventListener('push', function (e) {
   }));
 });
 
+/* Сообщить открытым окнам приложения, что данные изменились */
+function tellClients(msg) {
+  return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (cs) {
+    cs.forEach(function (c) { c.postMessage(msg); });
+  });
+}
+
+/* Открыть приложение (и задачу, если она есть) */
+function openApp(taskId) {
+  var url = new URL('./', self.registration.scope);
+  if (taskId) url.searchParams.set('task', taskId);
+  return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (cs) {
+    for (var i = 0; i < cs.length; i++) {
+      if ('focus' in cs[i]) { cs[i].postMessage({ open: taskId || null, refresh: true }); return cs[i].focus(); }
+    }
+    return self.clients.openWindow(url.href);
+  });
+}
+
+/* Короткое уведомление с результатом нажатия кнопки */
+function notifyResult(ok, text, d) {
+  return self.registration.showNotification(ok ? 'Готово ✓' : 'Не получилось', {
+    body: text,
+    tag: d.tag || ('result-' + (d.task_id || '')),
+    icon: 'icon-192.png',
+    badge: 'icon-192.png',
+    silent: ok,
+    data: { task_id: d.task_id || null, result: true }
+  });
+}
+
 self.addEventListener('notificationclick', function (e) {
   var n = e.notification, d = n.data || {};
   n.close();
+
+  // Кнопка в уведомлении (например, «Отметить»)
   if (e.action && d.token) {
-    e.waitUntil(fetch(PUSH_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: API_KEY },
-      body: JSON.stringify({ action: 'act', token: d.token, act: e.action })
-    }).catch(function () {}));
+    e.waitUntil(
+      fetch(PUSH_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: API_KEY },
+        body: JSON.stringify({ action: 'act', token: d.token, act: e.action })
+      })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { r: r, j: j }; }); })
+        .then(function (res) {
+          var ok = res.r.ok && res.j && res.j.ok !== false && !res.j.error;
+          var label = (n.actions || []).filter(function (a) { return a.action === e.action; }).map(function (a) { return a.title; })[0] || '';
+          return tellClients({ refresh: true }).then(function () {
+            return notifyResult(ok, ok ? (label ? label + ': ' : '') + (n.title || 'задача') : ((res.j && res.j.error) || ('ошибка ' + res.r.status)) + '. Нажмите, чтобы открыть задачу', d);
+          });
+        })
+        .catch(function () {
+          return notifyResult(false, 'Нет связи с сервером. Нажмите, чтобы открыть задачу', d);
+        })
+    );
     return;
   }
-  var url = new URL('./', self.registration.scope);
-  if (d.task_id) url.searchParams.set('task', d.task_id);
-  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (cs) {
-    for (var i = 0; i < cs.length; i++) {
-      if ('focus' in cs[i]) { cs[i].postMessage({ open: d.task_id || null }); return cs[i].focus(); }
-    }
-    return self.clients.openWindow(url.href);
-  }));
+
+  // Нажатие на само уведомление — открыть приложение
+  e.waitUntil(openApp(d.task_id));
 });

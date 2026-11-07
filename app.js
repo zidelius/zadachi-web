@@ -341,7 +341,7 @@ async function pushTest(){
 }
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(function(){});
-  navigator.serviceWorker.addEventListener('message',function(e){if(e.data&&e.data.open&&ME&&findTask(e.data.open))openTask(e.data.open);});
+  navigator.serviceWorker.addEventListener('message',function(e){if(!e.data||!ME)return;if(e.data.refresh)reloadSoon();if(e.data.open&&findTask(e.data.open))openTask(e.data.open);});
 }
 
 /* =================== Тост =================== */
@@ -349,7 +349,7 @@ var undoFn=null,toastT=null;
 function toast(text,undo){
   var el=document.getElementById('toast');if(!el)return;
   el.querySelector('span').textContent=text;undoFn=undo||null;el.querySelector('button').style.display=undo?'':'none';
-  el.classList.add('show');clearTimeout(toastT);toastT=setTimeout(function(){el.classList.remove('show');undoFn=null;},4000);
+  el.classList.add('show');clearTimeout(toastT);toastT=setTimeout(function(){el.classList.remove('show');undoFn=null;},Math.max(4000,String(text).length*70));
 }
 
 /* =================== Вход =================== */
@@ -525,10 +525,13 @@ function startVoice(target){
   if(VOICE.on){try{VOICE.rec.stop();}catch(e){}return;}
   var r;try{r=new SR();}catch(e){toast('Голосовой ввод не поддерживается в этом браузере');return;}
   r.lang='ru-RU';r.interimResults=true;r.continuous=false;r.maxAlternatives=1;
-  var text='';
+  var text='',started=false,errored=false,KB=' Можно надиктовать через микрофон на клавиатуре телефона.';
+  r.onstart=function(){started=true;};
+  /* некоторые мобильные браузеры (Яндекс, Huawei без Google) молча не запускают распознавание */
+  var startTimer=setTimeout(function(){if(VOICE.rec===r&&!started){errored=true;try{r.abort();}catch(e){}toast('Голосовой ввод не запустился в этом браузере.'+KB);}},4000);
   r.onresult=function(e){var t='';for(var i=0;i<e.results.length;i++)t+=e.results[i][0].transcript;text=t;var el=document.getElementById(target==='as'?'asin':'qin');if(el)el.value=t;if(target==='q')UI.quick=t;};
-  r.onerror=function(e){if(e.error==='not-allowed'||e.error==='service-not-allowed')toast('Разреши доступ к микрофону для этого сайта');else if(e.error!=='no-speech'&&e.error!=='aborted')toast('Не получилось распознать речь');};
-  r.onend=function(){VOICE.on=false;VOICE.rec=null;var t=text.trim();if(target==='q')UI.quick='';render();if(!t)return;
+  r.onerror=function(e){errored=true;if(e.error==='not-allowed')toast('Разреши доступ к микрофону для этого сайта (значок слева от адреса → Разрешения).');else if(e.error==='service-not-allowed'||e.error==='network'||e.error==='language-not-supported')toast('Распознавание речи недоступно в этом браузере.'+KB);else if(e.error==='no-speech')toast('Не услышал речь. Попробуй ещё раз.');else if(e.error!=='aborted')toast('Не получилось распознать речь.'+KB);};
+  r.onend=function(){clearTimeout(startTimer);VOICE.on=false;VOICE.rec=null;var t=text.trim();if(target==='q')UI.quick='';render();if(!t){if(started&&!errored)toast('Ничего не распознано.'+KB);return;}
     if(target==='as'||SET.assistant){askAssistant('chat',target==='q'?'Создай задачу: '+t:t,null,{autoAdd:true});}
     else{var qi=document.getElementById('qin'),f=document.getElementById('quick');if(qi&&f){qi.value=t;UI.quick=t;f.dispatchEvent(new Event('submit',{cancelable:true}));}}};
   VOICE.on=true;VOICE.target=target;VOICE.rec=r;
