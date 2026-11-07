@@ -83,7 +83,7 @@
         q(sb.from('meals').select('*').gte('day', since).order('day').order('at', { nullsFirst: true })),
         q(sb.from('pantry').select('*').order('name')),
         q(sb.from('appliances').select('*').order('name')),
-        q(sb.from('workouts').select('*').gte('day', since).order('day').order('at', { nullsFirst: true })),
+        q(sb.from('workouts').select('*').gte('day', addDays(T(), -365)).order('day').order('at', { nullsFirst: true })),
         q(sb.from('body_log').select('*').order('day', { ascending: false }).limit(300))
       ]);
       H.meals = r[0]; H.pantry = r[1]; H.appliances = r[2]; H.workouts = r[3]; H.body = r[4];
@@ -293,16 +293,33 @@
     if (!H.ok) return h + notReady();
     return h + (HUI.foodTab === 'day' ? foodDay(d) : kitchenView());
   }
+  /* Белки, жиры, углеводы за день: с целями — полоски прогресса и остаток, без целей — просто цифры */
+  function macroBlock(t) {
+    var goals = [num(X.SET.proteinGoal), num(X.SET.fatGoal), num(X.SET.carbsGoal)], any = goals.some(function (g) { return g; });
+    var items = [['Белки', t.protein], ['Жиры', t.fat], ['Углеводы', t.carbs]];
+    if (!any) return '<div class="hmac">' + items.map(function (it) { return '<span><b>' + Math.round(it[1]) + '</b> ' + it[0] + '</span>'; }).join('') + '</div>';
+    var h = '<div class="hmacros">' + items.map(function (it, i) {
+      var g = goals[i], v = it[1];
+      return '<div class="hmc"><div class="hmn"><span>' + it[0] + '</span><b>' + Math.round(v) + (g ? ' / ' + Math.round(g) : '') + ' г</b></div>' +
+        (g ? '<div class="hbar"><i style="width:' + Math.min(100, Math.round(v / g * 100)) + '%' + (v > g * 1.05 ? ';background:var(--warn)' : '') + '"></i></div>' : '') + '</div>';
+    }).join('') + '</div>';
+    var kg = num(X.SET.kcalGoal), left = [];
+    if (kg) left.push(Math.round(kg - totalsNow.kcal) + ' ккал');
+    items.forEach(function (it, i) { if (goals[i]) left.push(it[0][0] + ' ' + Math.round(goals[i] - it[1])); });
+    return h + '<div class="muted" style="margin-top:10px;font-size:13px">Осталось: ' + left.join(' · ') + '</div>';
+  }
+  var totalsNow = { kcal: 0 };
   function foodDay(d) {
     var t = totals(d), goal = num(X.SET.kcalGoal), ms = mealsOf(d);
+    totalsNow = t;
     var h = '<div class="calnav"><button class="iconbtn" data-a="hDay" data-v="prev" aria-label="Предыдущий день">' + I('left') + '</button>' +
       '<button class="link" data-a="hDay" data-v="today"><b>' + esc(dayWord(d)) + '</b></button>' +
       '<button class="iconbtn" data-a="hDay" data-v="next" aria-label="Следующий день">' + I('right') + '</button></div>';
     var pct = goal ? Math.min(100, Math.round(t.kcal / goal * 100)) : 0;
     h += '<div class="hsum"><div class="hk"><b>' + Math.round(t.kcal) + '</b><span>ккал' + (goal ? ' из ' + Math.round(goal) : '') + '</span>' +
-      '<button class="link" data-a="hGoal">' + (goal ? 'изменить цель' : 'задать цель') + '</button></div>' +
-      (goal ? '<div class="hbar"><i style="width:' + pct + '%"></i></div>' : '') +
-      '<div class="hmac"><span><b>' + Math.round(t.protein) + '</b> Белки</span><span><b>' + Math.round(t.fat) + '</b> Жиры</span><span><b>' + Math.round(t.carbs) + '</b> Углеводы</span></div>' +
+      '<button class="link" data-a="hGoal">' + (goal || num(X.SET.proteinGoal) || num(X.SET.fatGoal) || num(X.SET.carbsGoal) ? 'изменить цели' : 'задать цели') + '</button></div>' +
+      (goal ? '<div class="hbar"><i style="width:' + pct + '%' + (t.kcal > goal * 1.05 ? ';background:var(--warn)' : '') + '"></i></div>' : '') +
+      macroBlock(t) +
       (t.plan ? '<div class="muted" style="margin-top:8px;font-size:13px">Запланировано ещё на ' + Math.round(t.plan) + ' ккал</div>' : '') + '</div>';
     if (!ms.length) return h + '<div class="empty">На этот день записей нет. Нажми «Добавить»: можно сфотографировать еду или этикетку, или запланировать приём пищи.</div>';
     ms.forEach(function (m) { h += mealRow(m); });
@@ -470,6 +487,7 @@
     try {
       var r = await callAI({
         mode: 'recipe', text: s.text || '', today: T(), goal: num(X.SET.kcalGoal),
+        macros: { protein: num(X.SET.proteinGoal), fat: num(X.SET.fatGoal), carbs: num(X.SET.carbsGoal) },
         pantry: H.pantry.filter(function (p) { return p.kind === 'food'; }).map(function (p) { return { name: p.name, qty: p.qty, unit: p.unit, expires: p.expires }; }),
         spices: H.pantry.filter(function (p) { return p.kind === 'spice'; }).map(function (p) { return p.name; }),
         appliances: H.appliances.map(function (a) { return a.name; })
@@ -486,16 +504,17 @@
   /* =================== ТРЕНИРОВКИ =================== */
   function fitView() {
     var h = '<div class="top"><div><div class="date">' + fmtLong(T()) + '</div><h1 class="dh">Тренировки</h1></div><button class="btn2" data-a="' + (HUI.fitTab === 'body' ? 'hBodyNew' : 'hWorkNew') + '">' + I('plus') + (HUI.fitTab === 'body' ? 'Замер' : 'Добавить') + '</button></div>';
-    h += tabs([['log', 'Тренировки'], ['body', 'Замеры']], HUI.fitTab, 'hFitTab');
+    h += tabs([['log', 'Тренировки'], ['load', 'Нагрузка'], ['prog', 'Прогресс'], ['body', 'Замеры']], HUI.fitTab, 'hFitTab');
     if (!H.ok) return h + notReady();
-    return h + (HUI.fitTab === 'log' ? workLog() : bodyView());
+    return h + (HUI.fitTab === 'log' ? workLog() : HUI.fitTab === 'load' ? loadView() : HUI.fitTab === 'prog' ? progView() : bodyView());
   }
   function workRow(w) {
     var d = isDone(w), k = FKIND[w.kind] || FKIND.other;
     var lead = w.planned
       ? '<button class="chk' + (d ? ' on' : '') + '" data-a="hWorkChk" data-id="' + w.id + '" aria-label="Отметить"><span>' + (d ? I('check') : '') + '</span></button>'
       : '<span class="hdot">' + I(k.icon) + '</span>';
-    var meta = '<span>' + k.name + (hm(w.at) ? ', ' + hm(w.at) : '') + '</span>' + (w.minutes != null ? '<span class="tm">' + Math.round(w.minutes) + ' мин</span>' : '') +
+    var exs = w.exercises || [], nsets = exs.reduce(function (a, e) { return a + workingSets(e).length; }, 0);
+    var meta = '<span>' + k.name + (hm(w.at) ? ', ' + hm(w.at) : '') + '</span>' + (exs.length ? '<span class="tm">' + exs.length + ' упр., ' + nsets + ' ' + plural(nsets, 'подход', 'подхода', 'подходов') + '</span>' : '') + (w.minutes != null ? '<span class="tm">' + Math.round(w.minutes) + ' мин</span>' : '') +
       (w.kcal != null ? '<span>' + Math.round(w.kcal) + ' ккал</span>' : '') +
       ((w.metrics || []).length ? '<span>' + (w.metrics || []).slice(0, 2).map(function (m) { return esc(m.name + ' ' + m.value + (m.unit ? ' ' + m.unit : '')); }).join(' · ') + '</span>' : '') +
       (w.planned && !d ? '<span class="badge">план</span>' : '') + ((w.photos || []).length ? '<span>' + I('inbox') + (w.photos || []).length + '</span>' : '');
@@ -520,6 +539,7 @@
     h += section('Тип', chipSet('kind', Object.keys(FKIND).map(function (k) { return [k, FKIND[k].name]; }), s.kind));
     h += '<div class="row2"><label><div class="gl">Дата</div><input class="fld" type="date" data-f="day" value="' + esc(s.day) + '"></label><label><div class="gl">Время</div><input class="fld" type="time" data-f="at" value="' + esc(s.at || '') + '"></label></div>';
     h += field('title', 'Название', s.title, 'placeholder="Например, грудь и трицепс" autocomplete="off"');
+    if (s.kind === 'strength') h += liftBlock(s);
     h += section('Фото экрана тренажёра, часов, веса на штанге', photoBlock(s));
     if ((s.photos || []).length) h += '<button type="button" class="btn2" data-a="hAnalyze" data-v="fit"' + (s._busy ? ' disabled' : '') + '>' + I('spark') + (s._busy ? 'Считываю…' : 'Считать цифры с фото') + '</button>';
     if (s._err) h += '<div class="herr">' + esc(s._err) + '</div>';
@@ -530,8 +550,8 @@
     return h;
   }
   function workOpen(w, preset) {
-    var base = { type: 'h-work', id: null, day: T(), at: '', kind: 'strength', title: '', minutes: '', kcal: '', note: '', photos: [], metrics: [], planned: false, _rm: [] };
-    if (w) base = Object.assign(base, { id: w.id, day: w.day, at: hm(w.at), kind: w.kind, title: w.title, minutes: r1(w.minutes), kcal: r1(w.kcal), note: w.note || '', photos: (w.photos || []).slice(), metrics: (w.metrics || []).slice(), planned: w.planned, task_id: w.task_id, ai: w.ai });
+    var base = { type: 'h-work', id: null, day: T(), at: '', kind: 'strength', title: '', minutes: '', kcal: '', note: '', photos: [], metrics: [], exercises: [], liftText: '', planned: false, _rm: [] };
+    if (w) base = Object.assign(base, { id: w.id, day: w.day, at: hm(w.at), kind: w.kind, title: w.title, minutes: r1(w.minutes), kcal: r1(w.kcal), note: w.note || '', photos: (w.photos || []).slice(), metrics: (w.metrics || []).slice(), exercises: JSON.parse(JSON.stringify(w.exercises || [])), liftText: (w.ai && w.ai.liftText) || '', planned: w.planned, task_id: w.task_id, ai: w.ai });
     if (preset) Object.assign(base, preset);
     UI.sheet = base; renderSheet(true);
   }
@@ -539,7 +559,9 @@
     var s = UI.sheet; if (!s) return;
     var k = FKIND[s.kind] || FKIND.other, title = (s.title || '').trim() || k.name;
     if (btn) btn.disabled = true;
-    var row = { owner: X.ME, day: s.day || T(), at: s.at || null, kind: s.kind, title: title, minutes: num(s.minutes), kcal: num(s.kcal), note: s.note || '', photos: s.photos, metrics: s.metrics || [], planned: !!s.planned, ai: s.ai || null };
+    var exs = cleanExercises(s.exercises);
+    var row = { owner: X.ME, day: s.day || T(), at: s.at || null, kind: s.kind, title: title, minutes: num(s.minutes), kcal: num(s.kcal), note: s.note || '', photos: s.photos, metrics: s.metrics || [], exercises: exs, planned: !!s.planned, ai: s.ai || null };
+    if ((s.liftText || '').trim()) row.ai = Object.assign({}, row.ai || {}, { liftText: s.liftText });
     try {
       if (s.planned) {
         if (s.id && s.task_id && findTask(s.task_id)) patchTask(s.task_id, { title: ('Тренировка: ' + title).slice(0, 200), due_date: row.day, due_time: row.at });
@@ -553,6 +575,209 @@
       if (s._rm && s._rm.length) sb.storage.from(BUCKET).remove(s._rm);
       closeSheet(); render(); toast(s.planned ? 'Запланировано' : 'Записано');
     } catch (e) { if (btn) btn.disabled = false; err(e); }
+  }
+
+  /* =================== СИЛОВЫЕ: упражнения, нагрузка на мышцы, прогресс =================== */
+  var MUS = {
+    chest: 'Грудные', 'front-deltoids': 'Передние и средние дельты', 'back-deltoids': 'Задние дельты', biceps: 'Бицепс',
+    triceps: 'Трицепс', forearm: 'Предплечья', abs: 'Пресс', obliques: 'Косые мышцы живота', trapezius: 'Трапеции',
+    'upper-back': 'Широчайшие и спина', 'lower-back': 'Поясница', gluteal: 'Ягодичные', quadriceps: 'Квадрицепс',
+    hamstring: 'Задняя поверхность бедра', adductor: 'Приводящие бедра', abductors: 'Отводящие бедра', calves: 'Икры', neck: 'Шея'
+  };
+  /* Красный цвет = столько подходов на мышцу, сколько обычно хватает для максимальной нагрузки:
+     за одну тренировку 8 условных подходов, за неделю 12. Основная мышца в подходе считается за 1, вторичная за 0,5. */
+  var TARGET = { workout: 8, week: 12 };
+  function fmtN(x) { return String(Math.round(x * 10) / 10).replace('.', ','); }
+  function normName(n) { return String(n || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim(); }
+  function workingSets(ex) { return (ex.sets || []).filter(function (s) { return !s.warmup && +s.reps > 0; }); }
+  function mapMuscles(arr) {
+    var m = {};
+    (arr || []).forEach(function (x) { if (x && MUS[x.muscle] && +x.weight > 0) m[x.muscle] = Math.min(1, +x.weight); });
+    return m;
+  }
+  function cleanExercises(list) {
+    return (list || []).map(function (e) {
+      return {
+        name: String(e.name || '').trim(), muscles: e.muscles || {},
+        sets: (e.sets || []).map(function (st) { return { reps: Math.round(+st.reps) || 0, weight: st.weight === '' || st.weight == null || isNaN(+st.weight) ? null : +st.weight, warmup: !!st.warmup }; }).filter(function (st) { return st.reps > 0; })
+      };
+    }).filter(function (e) { return e.name && e.sets.length; });
+  }
+  function loadOf(workouts) {
+    var L = {};
+    workouts.forEach(function (w) {
+      (w.exercises || []).forEach(function (ex) {
+        var n = workingSets(ex).length; if (!n) return;
+        Object.keys(ex.muscles || {}).forEach(function (m) { L[m] = (L[m] || 0) + n * ex.muscles[m]; });
+      });
+    });
+    return L;
+  }
+  function heat(v) {   // 0 — зелёный (нет нагрузки), 1 — красный (максимум), между ними жёлтый и оранжевый
+    v = Math.max(0, Math.min(1, v));
+    return 'hsl(' + Math.round(120 * (1 - v)) + ',68%,' + (v > 0.55 ? 46 : 42) + '%)';
+  }
+  function bodyMap(L, target) {
+    if (!window.ANATOMY) return '';
+    var fig = function (side, label) {
+      return '<div class="hbfig"><svg viewBox="0 0 1000 2000" class="hbody" role="img" aria-label="' + label + '">' + window.ANATOMY[side].map(function (g) {
+        var key = (g.m === 'left-soleus' || g.m === 'right-soleus') ? 'calves' : g.m;
+        var fill = (key === 'head' || key === 'knees') ? 'var(--soft)' : heat((L[key] || 0) / target);
+        return g.p.map(function (p) { return '<polygon points="' + p + '" fill="' + fill + '" stroke="var(--bg)" stroke-width="7" stroke-linejoin="round"></polygon>'; }).join('');
+      }).join('') + '</svg><div>' + label + '</div></div>';
+    };
+    return '<div class="hbodies">' + fig('front', 'Спереди') + fig('back', 'Сзади') + '</div>' +
+      '<div class="hlegend"><span>нет нагрузки</span><i></i><span>максимум</span></div>';
+  }
+  function muscleList(L, target) {
+    var keys = Object.keys(MUS).filter(function (k) { return (L[k] || 0) > 0; }).sort(function (a, b) { return L[b] - L[a]; });
+    var h = keys.map(function (k) {
+      var v = L[k] / target;
+      return '<div class="hml"><div class="hmn"><span>' + MUS[k] + '</span><b>' + fmtN(L[k]) + '</b></div><div class="hbar"><i style="width:' + Math.round(Math.min(1, v) * 100) + '%;background:' + heat(v) + '"></i></div></div>';
+    }).join('');
+    var rest = Object.keys(MUS).filter(function (k) { return !(L[k] > 0); }).map(function (k) { return MUS[k].toLowerCase(); });
+    if (rest.length && keys.length) h += '<div class="muted" style="font-size:13px;margin-top:8px;line-height:1.45">Без нагрузки: ' + esc(rest.join(', ')) + '.</div>';
+    return h;
+  }
+  function doneLifts() {
+    return H.workouts.filter(function (w) { return isDone(w) && (w.exercises || []).length; }).sort(function (a, b) { return (a.day + hm(a.at)) < (b.day + hm(b.at)) ? -1 : 1; });
+  }
+  function knownExercises() {
+    var seen = {}, out = [];
+    H.workouts.forEach(function (w) { (w.exercises || []).forEach(function (e) { var k = normName(e.name); if (k && !seen[k]) { seen[k] = 1; out.push(e.name); } }); });
+    return out;
+  }
+
+  /* --- блок упражнений в форме тренировки --- */
+  function liftBlock(s) {
+    var h = '<div><div class="gl">Что делал на тренировке</div>' +
+      '<textarea class="fld hta" data-f="liftText" rows="5" placeholder="Своими словами: жим лёжа 4×8 по 80 кг, подтягивания 3×10, разводка гантелей 3×12 по 14 кг…" aria-label="Упражнения и подходы">' + esc(s.liftText || '') + '</textarea>' +
+      '<button type="button" class="btn2" style="margin-top:8px;width:100%" data-a="hLift"' + (s._lifting ? ' disabled' : '') + '>' + I('spark') + (s._lifting ? 'Разбираю…' : ((s.exercises || []).length ? 'Разобрать заново' : 'Разобрать и посчитать нагрузку')) + '</button>';
+    if (s._liftErr) h += '<div class="herr" style="margin-top:8px">' + esc(s._liftErr) + '</div>';
+    if (s._liftNote) h += '<div class="hnote" style="margin-top:8px">' + esc(s._liftNote) + '</div>';
+    h += '</div>';
+    var exs = s.exercises || [];
+    exs.forEach(function (e, i) {
+      h += '<div class="hex"><div class="hexh"><input class="fld" data-ex="' + i + ':name" value="' + esc(e.name) + '" aria-label="Название упражнения"><button type="button" class="iconbtn" data-a="hExDel" data-v="' + i + '" aria-label="Убрать упражнение">' + I('trash') + '</button></div>';
+      (e.sets || []).forEach(function (st, j) {
+        h += '<div class="hset"><span class="n">' + (j + 1) + '</span><input class="fld" inputmode="numeric" data-ex="' + i + ':' + j + ':reps" value="' + esc(st.reps) + '" aria-label="Повторы"><span>×</span><input class="fld" inputmode="decimal" data-ex="' + i + ':' + j + ':weight" value="' + esc(st.weight == null ? '' : st.weight) + '" placeholder="свой вес" aria-label="Вес, кг"><span class="u">кг</span>' +
+          '<label class="hwarm"><input type="checkbox" data-ex="' + i + ':' + j + ':warmup"' + (st.warmup ? ' checked' : '') + '>разм.</label><button type="button" class="iconbtn" data-a="hSetDel" data-v="' + i + ':' + j + '" aria-label="Убрать подход">' + I('x') + '</button></div>';
+      });
+      var mus = Object.keys(e.muscles || {}).sort(function (a, b) { return e.muscles[b] - e.muscles[a]; }).map(function (k) { return (MUS[k] || k) + (e.muscles[k] < 1 ? ' ×' + fmtN(e.muscles[k]) : ''); });
+      h += '<button type="button" class="btn2 hsetadd" data-a="hSetAdd" data-v="' + i + '">' + I('plus') + 'Подход</button>' + (mus.length ? '<div class="muted" style="font-size:12.5px;line-height:1.4;margin-top:8px">Работают: ' + esc(mus.join(', ')) + '</div>' : '') + '</div>';
+    });
+    if (exs.length) {
+      var L = loadOf([{ exercises: cleanExercises(exs) }]);
+      h += '<div><div class="gl">Нагрузка на мышцы в этой тренировке</div>' + bodyMap(L, TARGET.workout) + muscleList(L, TARGET.workout) + '</div>';
+    }
+    return h;
+  }
+  async function liftGo() {
+    var s = UI.sheet; if (!s || s._lifting) return;
+    var text = (s.liftText || '').trim();
+    if (!text) { toast('Напиши, что делал на тренировке'); return; }
+    s._lifting = true; s._liftErr = ''; renderSheet();
+    try {
+      var r = await callAI({ mode: 'lift', text: text, known: knownExercises() });
+      if (UI.sheet !== s) return;
+      s.exercises = (r.exercises || []).map(function (e) {
+        return { name: e.name, muscles: mapMuscles(e.muscles), sets: (e.sets || []).filter(function (x) { return +x.reps > 0; }).map(function (x) { return { reps: Math.round(+x.reps), weight: x.weight_kg == null ? null : +x.weight_kg, warmup: !!x.warmup }; }) };
+      }).filter(function (e) { return e.sets.length; });
+      s.kind = 'strength';
+      if (!(s.title || '').trim() && r.title) s.title = r.title;
+      s._liftNote = r.notes || '';
+      if (!s.exercises.length) s._liftErr = 'Не нашёл упражнений в записи. Напиши, например: «жим лёжа 4×8 по 80 кг».';
+    } catch (e) { s._liftErr = e.message || 'Не получилось'; }
+    s._lifting = false; if (UI.sheet === s) renderSheet();
+  }
+
+  /* --- вкладка «Нагрузка» --- */
+  function loadView() {
+    var lifts = doneLifts();
+    if (!lifts.length) return '<div class="empty">Здесь будет схема тела: мышцы окрашиваются от зелёного (нет нагрузки) до красного (максимум) по твоим упражнениям. Запиши силовую тренировку и опиши упражнения, и схема заполнится.</div>';
+    var P = HUI.loadP || '7', L, target, cap, list;
+    if (P === 'last') { var w = lifts[lifts.length - 1]; list = [w]; L = loadOf(list); target = TARGET.workout; cap = esc(w.title || 'Тренировка') + ', ' + esc(dayWord(w.day)); }
+    else {
+      var days = +P; list = lifts.filter(function (x) { return diff(x.day, T()) > -days; }); L = loadOf(list);
+      Object.keys(L).forEach(function (k) { L[k] = L[k] * 7 / days; }); target = TARGET.week;
+      cap = list.length + ' ' + plural(list.length, 'тренировка', 'тренировки', 'тренировок') + ' за ' + days + ' ' + plural(days, 'день', 'дня', 'дней') + (days > 7 ? ', в пересчёте на неделю' : '');
+    }
+    var h = '<div class="chipsrow">' + [['7', '7 дней'], ['30', '30 дней'], ['last', 'Последняя']].map(function (p) { return '<button class="fchip' + (P === p[0] ? ' on' : '') + '" data-a="hLoadP" data-v="' + p[0] + '">' + p[1] + '</button>'; }).join('') + '</div>';
+    h += '<div class="muted" style="font-size:13px;margin-top:10px">' + cap + '</div>';
+    if (!list.length) return h + '<div class="empty">За этот период силовых тренировок нет, все мышцы зелёные.' + '<br><br>' + bodyMap({}, target) + '</div>';
+    h += bodyMap(L, target);
+    h += '<div class="gl" style="margin-top:14px">Условных подходов на мышцу' + (P === 'last' ? '' : ' в неделю') + ' (красный — от ' + target + ')</div>' + muscleList(L, target);
+    return h;
+  }
+
+  /* --- вкладка «Прогресс» --- */
+  function summarizeSets(sets) {
+    var out = [], cur = null;
+    sets.forEach(function (s) {
+      var key = s.reps + '|' + s.weight;
+      if (cur && cur.key === key) cur.n++; else { cur = { key: key, n: 1, reps: s.reps, weight: s.weight }; out.push(cur); }
+    });
+    return out.map(function (c) { return c.n + '×' + c.reps + (c.weight != null ? ' ' + fmtN(c.weight) + ' кг' : ''); }).join(', ');
+  }
+  function progressData() {
+    var map = {};
+    doneLifts().forEach(function (w) {
+      (w.exercises || []).forEach(function (ex) {
+        var ws = workingSets(ex); if (!ws.length) return;
+        var k = normName(ex.name), rec = map[k] = map[k] || { name: ex.name, pts: [] };
+        var weighted = ws.filter(function (s) { return s.weight > 0; });
+        var score = weighted.length ? Math.max.apply(null, weighted.map(function (s) { return s.weight * (1 + s.reps / 30); })) : Math.max.apply(null, ws.map(function (s) { return s.reps; }));
+        var vol = ws.reduce(function (a, s) { return a + s.reps * (s.weight || 0); }, 0);
+        rec.pts.push({ day: w.day, score: score, kg: weighted.length > 0, summary: summarizeSets(ws), vol: vol });
+      });
+    });
+    return map;
+  }
+  function lineSvg(pts, unit) {
+    if (pts.length < 2) return '';
+    var vals = pts.map(function (p) { return p.y; }), mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+    if (mx - mn < 1) { mx += 0.5; mn -= 0.5; }
+    var t0 = fromKey(pts[0].x).getTime(), t1 = fromKey(pts[pts.length - 1].x).getTime(), W = 300, Hh = 110, pad = 8;
+    var xy = pts.map(function (p) { return [pad + (t1 === t0 ? 0 : (fromKey(p.x).getTime() - t0) / (t1 - t0)) * (W - 2 * pad), pad + (1 - (p.y - mn) / (mx - mn)) * (Hh - 2 * pad)]; });
+    return '<svg viewBox="0 0 ' + W + ' ' + Hh + '" class="hchart" role="img" aria-label="График прогресса"><path d="' + xy.map(function (p, i) { return (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); }).join('') + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' +
+      xy.map(function (p) { return '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.6" fill="currentColor"/>'; }).join('') + '</svg><div class="hrange"><span>' + fmtN(mn) + ' ' + unit + '</span><span>' + fmtN(mx) + ' ' + unit + '</span></div>';
+  }
+  function weeklyVolume() {
+    var wk = [], mon = addDays(T(), -((new Date().getDay() + 6) % 7));
+    for (var i = 11; i >= 0; i--) wk.push({ from: addDays(mon, -7 * i), v: 0 });
+    doneLifts().forEach(function (w) {
+      var b = wk.filter(function (x) { return w.day >= x.from && w.day < addDays(x.from, 7); })[0]; if (!b) return;
+      (w.exercises || []).forEach(function (e) { workingSets(e).forEach(function (s) { b.v += s.reps * (s.weight || 0); }); });
+    });
+    var mx = Math.max.apply(null, wk.map(function (x) { return x.v; }));
+    if (!mx) return '';
+    return '<div class="hsum"><div class="hk"><b>' + Math.round(wk[11].v / 100) / 10 + '</b><span>т поднято на этой неделе</span></div><svg viewBox="0 0 300 80" class="hchart" style="height:80px" role="img" aria-label="Объём по неделям">' +
+      wk.map(function (x, i) { var hh = Math.max(x.v ? 3 : 0, x.v / mx * 70); return '<rect x="' + (i * 25 + 3) + '" y="' + (76 - hh) + '" width="19" height="' + hh + '" rx="3" fill="currentColor" opacity="' + (i === 11 ? 1 : 0.45) + '"/>'; }).join('') + '</svg><div class="hrange"><span>12 недель назад</span><span>эта неделя</span></div></div>';
+  }
+  function progView() {
+    var data = progressData(), keys = Object.keys(data);
+    if (!keys.length) return '<div class="empty">Прогресс появится, когда ты запишешь несколько силовых тренировок. По каждому упражнению покажу рабочий максимум (расчётный вес на один повтор) и как он менялся.</div>';
+    keys.sort(function (a, b) { return data[a].pts[data[a].pts.length - 1].day < data[b].pts[data[b].pts.length - 1].day ? 1 : -1; });
+    var h = weeklyVolume();
+    h += '<div class="dday">Упражнения</div>';
+    keys.forEach(function (k) {
+      var d = data[k], pts = d.pts, last = pts[pts.length - 1], first = pts[0], unit = last.kg ? 'кг' : 'повт.';
+      var ch = '';
+      if (pts.length > 1 && first.score > 0) {
+        var pc = Math.round((last.score - first.score) / first.score * 100);
+        ch = '<span class="' + (pc > 0 ? 'hup' : pc < 0 ? 'hdown' : '') + '">' + (pc > 0 ? '▲ +' : pc < 0 ? '▼ ' : '') + pc + '% за ' + diff(last.day, first.day) + ' ' + plural(diff(last.day, first.day), 'день', 'дня', 'дней') + '</span>';
+      }
+      h += '<div class="task hrow"><div class="hlead"><span class="hdot">' + I('dumb') + '</span></div><button class="tb" data-a="hProgOpen" data-v="' + esc(k) + '"><span class="tt">' + esc(d.name) + '</span><span class="meta"><span class="tm">' + esc(last.summary) + '</span><span>' + esc(dayWord(last.day)) + '</span>' + (ch || '<span>' + pts.length + ' ' + plural(pts.length, 'запись', 'записи', 'записей') + '</span>') + '</span></button></div>';
+    });
+    return h;
+  }
+  function progSheet(s) {
+    var d = progressData()[s.key]; if (!d) return '<div class="empty">Нет данных</div>';
+    var pts = d.pts, kg = pts[pts.length - 1].kg, best = pts.reduce(function (a, p) { return p.score > a.score ? p : a; }, pts[0]);
+    var h = '<div class="muted" style="line-height:1.5">' + (kg ? 'Расчётный максимум на один повтор (формула Эпли) — лучший подход в тренировке.' : 'Максимум повторений в подходе.') + '</div>';
+    h += '<div class="hsum"><div class="hk"><b>' + fmtN(best.score) + '</b><span>' + (kg ? 'кг, рекорд ' : 'повторений, рекорд ') + esc(dayWord(best.day).toLowerCase()) + '</span></div>' + lineSvg(pts.map(function (p) { return { x: p.day, y: p.score }; }), kg ? 'кг' : 'повт.') + '</div>';
+    h += '<div class="fields">' + pts.slice().reverse().slice(0, 40).map(function (p) { return '<div class="fr"><span>' + esc(fmtDM(p.day)) + '</span><b style="font-weight:500;text-align:right">' + esc(p.summary) + '</b></div>'; }).join('') + '</div>';
+    return h;
   }
 
   /* --- замеры --- */
@@ -617,8 +842,19 @@
       case 'h-work': return { title: s.id ? 'Тренировка' : (s.planned ? 'Запланировать тренировку' : 'Записать тренировку'), body: workSheet(s), foot: '<button class="btn" data-a="hWorkSave">' + (s.id ? 'Сохранить' : (s.planned ? 'Запланировать' : 'Записать')) + '</button>' + (s.id ? '<button class="btn2 warn" data-a="hWorkDel">Удалить</button>' : '') };
       case 'h-body': return { title: s.id ? 'Замер' : 'Новый замер', body: bodySheet(s), foot: '<button class="btn" data-a="hBodySave">Сохранить</button>' + (s.id ? '<button class="btn2 warn" data-a="hBodyDel">Удалить</button>' : '') };
       case 'h-recipe': return { title: 'Что приготовить', body: recipeSheet(s), foot: '' };
+      case 'h-prog': return { title: (progressData()[s.key] || {}).name || 'Упражнение', body: progSheet(s), foot: '' };
       case 'h-pantry': return { title: 'Продукт', body: field('name', 'Название', s.name) + '<div class="row2">' + numField('qty', 'Количество', s.qty) + '<label><div class="gl">Единица</div><select class="fld" data-f="unit">' + UNITS.map(function (u) { return '<option' + (u === s.unit ? ' selected' : '') + '>' + u + '</option>'; }).join('') + '</select></label></div><label><div class="gl">Годен до</div><input class="fld" type="date" data-f="expires" value="' + esc(s.expires || '') + '"></label>', foot: '<button class="btn" data-a="hPantrySave">Сохранить</button>' };
-      case 'h-goal': return { title: 'Цель по калориям', body: '<div class="muted" style="line-height:1.5">Сколько килокалорий в день ты хочешь съедать. Эту цифру увидит и помощник при подборе рецептов.</div>' + numField('goal', 'Ккал в день', s.goal), foot: '<button class="btn" data-a="hGoalSave">Сохранить</button>' };
+      case 'h-goal': {
+        var kc = num(s.goal), pp = num(s.g_p), ff = num(s.g_f), cc = num(s.g_c);
+        var fromMacro = (pp != null || ff != null || cc != null) ? Math.round((pp || 0) * 4 + (ff || 0) * 9 + (cc || 0) * 4) : null;
+        return { title: 'Цели на день', body:
+          '<div class="muted" style="line-height:1.5">Сколько ты хочешь съедать в день. Эти цели видны в дневнике питания, их учитывает помощник при советах и подборе рецептов. Любое поле можно оставить пустым.</div>' +
+          numField('goal', 'Калории, ккал', s.goal) +
+          '<div class="row3">' + numField('g_p', 'Белки, г', s.g_p) + numField('g_f', 'Жиры, г', s.g_f) + numField('g_c', 'Углеводы, г', s.g_c) + '</div>' +
+          (fromMacro ? '<div class="hnote">По граммам БЖУ выходит около ' + fromMacro + ' ккал' + (kc ? (Math.abs(fromMacro - kc) > kc * 0.08 ? ', это заметно отличается от цели по калориям.' : ', это сходится с целью по калориям.') : '.') + '</div>' : '') +
+          (kc ? section('Рассчитать БЖУ по калориям', '<div class="chips"><button type="button" class="chip" data-a="hGoalSplit" data-v="balance">Баланс 30/30/40</button><button type="button" class="chip" data-a="hGoalSplit" data-v="protein">Больше белка 35/25/40</button><button type="button" class="chip" data-a="hGoalSplit" data-v="lowcarb">Меньше углеводов 30/35/35</button></div>') : '<div class="muted" style="font-size:13px">Впиши калории, и появятся кнопки, которые сами рассчитают БЖУ.</div>'),
+          foot: '<button class="btn" data-a="hGoalSave">Сохранить</button>' };
+      }
     }
     return { title: '', body: '' };
   }
@@ -646,8 +882,17 @@
     hMealSave: function (v, id, el) { saveMeal(el); },
     hMealDel: function () { var s = UI.sheet; if (s && s.id) delRecord('meals', H.meals, s.id, 'Запись'); },
     hMealChk: function (v, id) { var m = H.meals.filter(function (x) { return x.id === id; })[0]; if (m) toggleLinked(m, 'meals'); },
-    hGoal: function () { UI.sheet = { type: 'h-goal', goal: X.SET.kcalGoal || '' }; renderSheet(true); },
-    hGoalSave: function () { var s = UI.sheet; X.SET.kcalGoal = num(s.goal) || null; saveSettings(); closeSheet(); render(); },
+    hGoal: function () { var S = X.SET; UI.sheet = { type: 'h-goal', goal: r1(S.kcalGoal), g_p: r1(S.proteinGoal), g_f: r1(S.fatGoal), g_c: r1(S.carbsGoal) }; renderSheet(true); },
+    hGoalSplit: function (v) {
+      var s = UI.sheet, kc = num(s.goal); if (!kc) return;
+      var sp = { balance: [0.3, 0.3, 0.4], protein: [0.35, 0.25, 0.4], lowcarb: [0.3, 0.35, 0.35] }[v] || [0.3, 0.3, 0.4];   // доли калорий: белки / жиры / углеводы
+      s.g_p = String(Math.round(kc * sp[0] / 4)); s.g_f = String(Math.round(kc * sp[1] / 9)); s.g_c = String(Math.round(kc * sp[2] / 4)); renderSheet();
+    },
+    hGoalSave: function () {
+      var s = UI.sheet, S = X.SET;
+      S.kcalGoal = num(s.goal) || null; S.proteinGoal = num(s.g_p) || null; S.fatGoal = num(s.g_f) || null; S.carbsGoal = num(s.g_c) || null;
+      saveSettings(); closeSheet(); render(); toast('Цели сохранены');
+    },
     /* кухня */
     hPantryAdd: function (v, id, el) {
       var f = el.form, spice = v === 'spice';
@@ -681,6 +926,18 @@
     hWorkOpen: function (v, id) { var w = H.workouts.filter(function (x) { return x.id === id; })[0]; if (w) workOpen(w); },
     hWorkSave: function (v, id, el) { saveWork(el); },
     hWorkDel: function () { var s = UI.sheet; if (s && s.id) delRecord('workouts', H.workouts, s.id, 'Тренировка'); },
+    hLift: function () { liftGo(); },
+    hExDel: function (v) { var s = UI.sheet; if (s && s.exercises) { s.exercises.splice(+v, 1); renderSheet(); } },
+    hSetAdd: function (v) {
+      var s = UI.sheet; if (!s || !s.exercises[+v]) return; var sets = s.exercises[+v].sets, l = sets[sets.length - 1];
+      sets.push({ reps: l ? l.reps : 8, weight: l ? l.weight : null, warmup: false }); renderSheet();
+    },
+    hSetDel: function (v) {
+      var s = UI.sheet, p = String(v).split(':'); if (!s || !s.exercises[+p[0]]) return;
+      s.exercises[+p[0]].sets.splice(+p[1], 1); if (!s.exercises[+p[0]].sets.length) s.exercises.splice(+p[0], 1); renderSheet();
+    },
+    hLoadP: function (v) { HUI.loadP = v; render(); },
+    hProgOpen: function (v) { UI.sheet = { type: 'h-prog', key: v }; renderSheet(true); },
     hWorkChk: function (v, id) { var w = H.workouts.filter(function (x) { return x.id === id; })[0]; if (w) toggleLinked(w, 'workouts'); },
     hBodyNew: function () { bodyOpen(null); },
     hBodyOpen: function (v, id) { var b = H.body.filter(function (x) { return x.id === id; })[0]; if (b) bodyOpen(b); },
@@ -690,18 +947,189 @@
 
   /* поля формы пишем в состояние окна, чтобы перерисовка ничего не стирала */
   function isH() { return UI.sheet && String(UI.sheet.type).indexOf('h-') === 0; }
+  /* таблица упражнений: data-ex="упражнение:поле" или "упражнение:подход:поле" */
+  function setEx(el) {
+    var s = UI.sheet, p = el.getAttribute('data-ex').split(':'), ex = s.exercises && s.exercises[+p[0]]; if (!ex) return;
+    if (p.length === 2) { ex.name = el.value; return; }
+    var st = ex.sets[+p[1]]; if (!st) return;
+    if (p[2] === 'reps') st.reps = parseInt(el.value, 10) || 0;
+    else if (p[2] === 'weight') st.weight = num(el.value);
+    else if (p[2] === 'warmup') st.warmup = el.checked;
+  }
   document.addEventListener('input', function (e) {
-    var el = e.target; if (!isH() || !el.getAttribute || !el.getAttribute('data-f')) return;
+    var el = e.target; if (!isH() || !el.getAttribute) return;
+    if (el.getAttribute('data-ex')) { if (el.type !== 'checkbox') setEx(el); return; }
+    if (!el.getAttribute('data-f')) return;
     UI.sheet[el.getAttribute('data-f')] = el.value;
   });
   document.addEventListener('change', function (e) {
     var el = e.target; if (!isH() || !el.getAttribute) return;
+    if (el.getAttribute('data-ex')) { setEx(el); return; }
     var f = el.getAttribute('data-f'); if (f) UI.sheet[f] = el.value;
+    if (f && UI.sheet.type === 'h-goal') renderSheet();   // обновить подсказку и кнопки расчёта БЖУ
     if (el.hasAttribute('data-hfile') && el.files && el.files.length) { var files = Array.prototype.slice.call(el.files); el.value = ''; addPhotos(files); }
   });
 
+  /* =================== ПОМОЩНИК: фото и предложенные записи =================== */
+  var PEND = [], PEND_UP = 0;   // фото, прикреплённые к ещё не отправленному сообщению
+  function asAttach() { return '<label class="iconbtn asatt" aria-label="Прикрепить фото">' + CAM + '<input type="file" accept="image/*" multiple data-asfile hidden></label>'; }
+  function asPending() {
+    if (!PEND.length && !PEND_UP) return '';
+    return '<div class="aspend">' + PEND.map(function (p, i) { return '<div class="hph sm"><img data-ph="' + esc(p) + '" alt="Фото"><button type="button" data-a="hAsPhDel" data-v="' + i + '" aria-label="Убрать фото">' + I('x') + '</button></div>'; }).join('') + (PEND_UP ? '<div class="hph sm hload">…</div>' : '') + '</div>';
+  }
+  function asPhotos(paths) { return '<div class="asph">' + paths.map(function (p) { return '<img data-ph="' + esc(p) + '" alt="Фото">'; }).join('') + '</div>'; }
+  async function asImages(paths) {
+    var out = [];
+    for (var i = 0; i < paths.length; i++) { try { out.push({ media_type: 'image/jpeg', data: await blobB64(await photoBlob(paths[i])) }); } catch (e) { /* фото могло быть удалено */ } }
+    return out;
+  }
+  function rerenderKeep() {
+    var ta = document.getElementById('asin'), v = ta ? ta.value : '';
+    render();
+    var t2 = document.getElementById('asin'); if (t2 && v) t2.value = v;
+  }
+  async function addAsPhotos(files) {
+    PEND_UP += files.length; rerenderKeep();
+    for (var i = 0; i < files.length; i++) {
+      try {
+        if (PEND.length >= 4) throw new Error('К одному сообщению можно приложить до 4 фото');
+        var b = await shrink(files[i]), path = X.ME + '/' + uid() + '.jpg';
+        var u = await sb.storage.from(BUCKET).upload(path, b, { contentType: 'image/jpeg' });
+        if (u.error) throw u.error;
+        BLOBS[path] = b; PEND.push(path);
+      } catch (e) { err(e); }
+      PEND_UP--;
+    }
+    rerenderKeep();
+  }
+
+  var ETITLE = { meal: 'Питание', workout: 'Тренировки', body: 'Замеры', pantry: 'Холодильник', note: 'Заметки' };
+  function asEntries(a, photos) {
+    var out = [], used = false;
+    var withPh = function () { if (used || !photos || !photos.length) return []; used = true; return photos.slice(); };
+    (a.meals || []).forEach(function (d) { out.push({ t: 'meal', d: d, photos: withPh() }); });
+    (a.workouts || []).forEach(function (d) { out.push({ t: 'workout', d: d, photos: withPh() }); });
+    (a.body_logs || []).forEach(function (d) { out.push({ t: 'body', d: d, photos: withPh() }); });
+    (a.pantry_items || []).forEach(function (d) { out.push({ t: 'pantry', d: d }); });
+    (a.new_notes || []).forEach(function (d) { out.push({ t: 'note', d: d }); });
+    return out;
+  }
+  function entryInfo(e) {
+    var d = e.d, when = function () { return (d.planned ? 'запланировано, ' : '') + dayWord(d.day || T()).toLowerCase() + (d.at ? ' ' + d.at : ''); };
+    if (e.t === 'meal') {
+      var k = KIND[d.kind] || KIND.snack;
+      return { title: d.title, meta: [k.name, d.kcal != null ? Math.round(d.kcal) + ' ккал' : '', (d.protein != null || d.fat != null || d.carbs != null) ? 'Б ' + Math.round(d.protein || 0) + ' · Ж ' + Math.round(d.fat || 0) + ' · У ' + Math.round(d.carbs || 0) : '', d.grams ? Math.round(d.grams) + ' г' : '', when()], note: d.note };
+    }
+    if (e.t === 'workout') {
+      var exs = d.exercises || [], ns = exs.reduce(function (a, x) { return a + workingSets(x).length; }, 0);
+      return { title: d.title, meta: [(FKIND[d.kind] || FKIND.other).name, exs.length ? exs.length + ' упр., ' + ns + ' ' + plural(ns, 'подход', 'подхода', 'подходов') : '', d.minutes != null ? Math.round(d.minutes) + ' мин' : '', d.kcal != null ? Math.round(d.kcal) + ' ккал' : '']
+        .concat((d.metrics || []).slice(0, 3).map(function (m) { return m.name + ' ' + m.value + (m.unit ? ' ' + m.unit : ''); })).concat([when()]), note: d.note };
+    }
+    if (e.t === 'body') return { title: d.weight != null ? r1(d.weight) + ' кг' : 'Замер', meta: [d.fat != null ? 'жир ' + r1(d.fat) + '%' : '', d.muscle != null ? 'мышцы ' + r1(d.muscle) + ' кг' : '', d.waist != null ? 'талия ' + r1(d.waist) + ' см' : '', dayWord(d.day || T()).toLowerCase()], note: d.note };
+    if (e.t === 'pantry') return { title: d.name, meta: [d.kind === 'spice' ? 'приправа' : 'продукт', d.qty != null ? r1(d.qty) + ' ' + (d.unit || '') : '', d.expires ? 'до ' + fmtDM(d.expires) : ''], note: '' };
+    return { title: d.title, meta: [], note: String(d.body || '').slice(0, 140) };
+  }
+  var BTN = { meal: function (d) { return d.planned ? 'Запланировать' : 'Записать в питание'; }, workout: function (d) { return d.planned ? 'Запланировать' : 'Записать тренировку'; }, body: function () { return 'Записать замер'; }, pantry: function (d) { return d.kind === 'spice' ? 'В приправы' : 'В холодильник'; }, note: function () { return 'Создать заметку'; } };
+  var DONE = { ok: 'записано', note: 'в заметках', task: 'в задачах' };
+  function asCards(m, mi) {
+    var es = m.entries || []; if (!es.length) return '';
+    var open = es.filter(function (e) { return !e._done; }).length, h = '';
+    es.forEach(function (e, ei) {
+      var inf = entryInfo(e), v = mi + ':' + ei;
+      h += '<div class="prop hentry"><div style="flex:1;min-width:0"><span class="hetag">' + ETITLE[e.t] + '</span><b>' + esc(inf.title) + '</b><div class="meta">' + inf.meta.filter(Boolean).map(function (x) { return '<span>' + esc(x) + '</span>'; }).join('') + '</div>' + (inf.note ? '<div class="muted" style="font-size:12.5px;margin-top:4px;line-height:1.4">' + esc(inf.note) + '</div>' : '') + '</div>';
+      if (e._done) h += '<span class="badge">' + DONE[e._done] + '</span>';
+      else {
+        h += '<div class="hebtns"><button class="btn2" data-a="hAsEntry" data-v="' + v + '">' + BTN[e.t](e.d) + '</button>';
+        if (e.t !== 'note') h += '<button class="link" data-a="hAsTo" data-v="' + v + ':note">в заметки</button>';
+        h += '<button class="link" data-a="hAsTo" data-v="' + v + ':task">задачей</button></div>';
+      }
+      h += '</div>';
+    });
+    if (open > 1) h += '<button class="btn2" style="margin-top:8px" data-a="hAsAll" data-v="' + mi + '">Записать всё (' + open + ')</button>';
+    return h;
+  }
+  function asSummary(m) {
+    return (m.entries || []).map(function (e) {
+      var inf = entryInfo(e);
+      return ETITLE[e.t].toLowerCase() + ' «' + inf.title + '» (' + inf.meta.filter(Boolean).join(', ') + ')' + (e._done ? ' — ' + DONE[e._done] : '');
+    }).join('; ');
+  }
+
+  /* занесение предложенных записей по разделам */
+  async function addMealFrom(d, photos) {
+    var k = KIND[d.kind] || KIND.snack, day = d.day || T();
+    var row = { owner: X.ME, day: day, at: d.at || null, kind: d.kind in KIND ? d.kind : 'snack', title: d.title, grams: d.grams, kcal: d.kcal, protein: d.protein, fat: d.fat, carbs: d.carbs, note: d.note || '', photos: photos || [], planned: !!d.planned, ai: { source: 'assistant' } };
+    if (row.planned) row.task_id = await makeTask(k.name, row.title, row.day, row.at);
+    var saved = await q(sb.from('meals').insert(row).select().single()); H.meals.push(saved); HUI.day = saved.day;
+  }
+  async function addWorkoutFrom(d, photos) {
+    var day = d.day || T();
+    var row = { owner: X.ME, day: day, at: d.at || null, kind: d.kind in FKIND ? d.kind : 'other', title: d.title, minutes: d.minutes, kcal: d.kcal, note: d.note || '', photos: photos || [], metrics: d.metrics || [], exercises: cleanExercises(d.exercises), planned: !!d.planned, ai: { source: 'assistant' } };
+    if (row.planned) row.task_id = await makeTask('Тренировка', row.title, row.day, row.at);
+    var saved = await q(sb.from('workouts').insert(row).select().single()); H.workouts.push(saved);
+  }
+  async function addBodyFrom(d, photos) {
+    var saved = await q(sb.from('body_log').insert({ owner: X.ME, day: d.day || T(), weight: d.weight, fat: d.fat, muscle: d.muscle, waist: d.waist, note: d.note || '', photos: photos || [], ai: { source: 'assistant' } }).select().single()); H.body.push(saved);
+  }
+  async function addPantryFrom(d) {
+    var saved = await q(sb.from('pantry').insert({ owner: X.ME, kind: d.kind === 'spice' ? 'spice' : 'food', name: d.name, qty: d.qty, unit: d.unit || '', expires: d.expires || null }).select().single());
+    H.pantry.push(saved); H.pantry.sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+  }
+  async function addNoteFrom(title, bodyText) {
+    var row = await q(sb.from('notes').insert({ owner: X.ME, title: title, body: bodyText }).select().single());
+    if (X.D.notes.indexOf(row) < 0) X.D.notes.unshift(row);
+  }
+  function entryText(e) {
+    var inf = entryInfo(e), d = e.d;
+    if (e.t === 'note') return { title: d.title, body: d.body || '' };
+    var lines = [inf.meta.filter(Boolean).join(' · ')];
+    if (inf.note) lines.push(inf.note);
+    if (e.t === 'workout') (d.exercises || []).forEach(function (x) { lines.push(x.name + ': ' + summarizeSets(workingSets(x))); });
+    return { title: ETITLE[e.t] + ': ' + inf.title, body: lines.filter(Boolean).join('\n') };
+  }
+  async function entryAdd(mi, ei, to) {
+    var m = X.AS.msgs[mi], e = m && m.entries && m.entries[ei]; if (!e || e._done) return false;
+    try {
+      if (to === 'note') { var t1 = entryText(e); await addNoteFrom(t1.title, t1.body); e._done = 'note'; }
+      else if (to === 'task') {
+        var t2 = entryText(e), d = e.d || {};
+        await createTask({ title: t2.title.slice(0, 200), details: t2.body, due_date: d.day && (d.planned || e.t === 'meal' || e.t === 'workout') ? d.day : null, due_time: d.at || null });
+        e._done = 'task';
+      } else {
+        if (e.t === 'meal') await addMealFrom(e.d, e.photos);
+        else if (e.t === 'workout') await addWorkoutFrom(e.d, e.photos);
+        else if (e.t === 'body') await addBodyFrom(e.d, e.photos);
+        else if (e.t === 'pantry') await addPantryFrom(e.d);
+        else if (e.t === 'note') await addNoteFrom(e.d.title, e.d.body);
+        e._done = 'ok';
+      }
+      X.asSave(); render(); return true;
+    } catch (x) { err(x); return false; }
+  }
+  Object.assign(actions, {
+    hAsPhDel: function (v) {
+      var p = PEND.splice(+v, 1)[0]; if (p) { sb.storage.from(BUCKET).remove([p]); delete BLOBS[p]; }
+      rerenderKeep();
+    },
+    hAsEntry: async function (v) { var p = v.split(':'); if (await entryAdd(+p[0], +p[1], '')) toast('Записано'); },
+    hAsTo: async function (v) { var p = v.split(':'); if (await entryAdd(+p[0], +p[1], p[2])) toast(p[2] === 'note' ? 'Создана заметка' : 'Создана задача'); },
+    hAsAll: async function (v) {
+      var m = X.AS.msgs[+v], n = 0; if (!m) return;
+      for (var i = 0; i < m.entries.length; i++) if (!m.entries[i]._done && await entryAdd(+v, i, '')) n++;
+      if (n) toast('Записано: ' + n);
+    }
+  });
+  document.addEventListener('change', function (e) {
+    var el = e.target;
+    if (el && el.hasAttribute && el.hasAttribute('data-asfile') && el.files && el.files.length) { var files = Array.prototype.slice.call(el.files); el.value = ''; addAsPhotos(files); }
+  });
+
   Object.assign(A, actions);
-  window.HEALTH = { load: load, foodView: foodView, fitView: fitView, sheet: sheet };
+  window.HEALTH = {
+    load: load, foodView: foodView, fitView: fitView, sheet: sheet,
+    asAttach: asAttach, asPending: asPending, asPendingPaths: function () { return PEND.slice(); }, asUploading: function () { return PEND_UP > 0; },
+    asTake: function () { var p = PEND; PEND = []; return p; }, asPhotos: asPhotos, asImages: asImages, asEntries: asEntries, asCards: asCards, asSummary: asSummary
+  };
   /* если основное приложение уже успело загрузиться раньше этого файла — догружаем данные разделов */
   if (X.ME && X.D.profiles.length) load().then(function () { render(); });
 })();

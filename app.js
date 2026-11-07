@@ -550,13 +550,14 @@ function assistantView(){
   asLoad();
   var h='<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">Помощник</h1></div>'+(SET.assistant&&AS.msgs.length?'<button class="btn2" data-a="asClear">Очистить</button>':'')+'</div>';
   if(!SET.assistant){
-    return h+'<div class="fields" style="margin-top:18px;padding:18px;display:flex;flex-direction:column;gap:12px"><div style="font-size:16px;line-height:1.5">Помощник на основе Claude смотрит твои задачи, привычки и заметки, составляет план на день, находит в заметках дела и предлагает задачи со сроками. Сам он ничего не меняет: каждую задачу и перенос ты подтверждаешь.</div><div class="muted" style="font-size:14px;line-height:1.5">Когда ты пользуешься помощником, эти данные отправляются в Claude (Anthropic) для обработки. Выключить можно в любой момент в настройках.</div><button class="btn" data-a="asOn">'+I('spark')+'Включить помощника</button></div>';
+    return h+'<div class="fields" style="margin-top:18px;padding:18px;display:flex;flex-direction:column;gap:12px"><div style="font-size:16px;line-height:1.5">Помощник на основе Claude смотрит твои задачи, привычки, заметки, питание и тренировки. Он составляет план на день, находит в заметках дела, подводит итоги питания и тренировок, а по фото еды, этикеток, экрана тренажёра или весов предлагает, куда записать данные. Сам он ничего не меняет: каждую запись ты подтверждаешь.</div><div class="muted" style="font-size:14px;line-height:1.5">Когда ты пользуешься помощником, эти данные и присланные фото отправляются в Claude (Anthropic) для обработки. Выключить можно в любой момент в настройках.</div><button class="btn" data-a="asOn">'+I('spark')+'Включить помощника</button></div>';
   }
-  h+='<div class="chipsrow"><button class="fchip" data-a="asPlan"'+(AS.busy?' disabled':'')+'>'+I('sun')+'План на сегодня</button><button class="fchip" data-a="asNotes"'+(AS.busy?' disabled':'')+'>'+I('note')+'Разобрать заметки</button></div>';
+  var dis=AS.busy?' disabled':'',hl=!!window.HEALTH;
+  h+='<div class="chipsrow"><button class="fchip" data-a="asPlan"'+dis+'>'+I('sun')+'План на сегодня</button>'+(hl?'<button class="fchip" data-a="asFood"'+dis+'>'+I('leaf')+'Итоги питания</button><button class="fchip" data-a="asFit"'+dis+'>'+I('dumb')+'Анализ тренировок</button><button class="fchip" data-a="hRecipeOpen">'+I('spark')+'Что приготовить</button>':'')+'<button class="fchip" data-a="asNotes"'+dis+'>'+I('note')+'Разобрать заметки</button></div>';
   h+='<div class="chat" id="chat">';
-  if(!AS.msgs.length)h+='<div class="empty">Спроси что угодно: «что у меня сегодня?», «разложи эти дела по неделе: …», «что я давно откладываю?». Или нажми «План на сегодня».</div>';
+  if(!AS.msgs.length)h+='<div class="empty">Спроси что угодно: «что у меня сегодня?», «сколько мне ещё съесть до цели?», «как у меня идут тренировки?».<br>Можно прикрепить фото с подписью: еды, этикетки, экрана тренажёра, весов, продуктов или записи. Я разберу и спрошу, куда это занести: в питание, тренировки, заметки или задачи.</div>';
   AS.msgs.forEach(function(m,mi){
-    if(m.role==='user'){h+='<div class="m u">'+nl(m.content)+'</div>';return;}
+    if(m.role==='user'){h+='<div class="m u">'+(m.photos&&m.photos.length&&window.HEALTH?HEALTH.asPhotos(m.photos):'')+nl(m.content)+'</div>';return;}
     if(m.error){h+='<div class="m a err">'+nl(m.content)+'</div>';return;}
     h+='<div class="m a">'+nl(m.content);
     (m.questions||[]).forEach(function(q2){h+='<div class="q">'+I('msg')+'<span>'+esc(q2)+'</span></div>';});
@@ -567,23 +568,29 @@ function assistantView(){
     });
     (m.moves||[]).forEach(function(mv,vi){var tk=findTask(mv.task_id);if(!tk)return;
       h+='<div class="prop"><div style="flex:1;min-width:0"><b>'+esc(tk.title)+'</b><div class="meta"><span>'+I('move')+(mv.due_date?'на '+dayWord(mv.due_date).toLowerCase():'без срока')+'</span>'+(mv.reason?'<span>'+esc(mv.reason)+'</span>':'')+'</div></div>'+(mv._done?'<span class="badge">перенесено</span>':'<button class="btn2" data-a="asMove" data-v="'+mi+':'+vi+'">Перенести</button>')+'</div>';});
+    if(window.HEALTH)h+=HEALTH.asCards(m,mi);
     if(open>1)h+='<button class="btn2" style="margin-top:8px" data-a="asAddAll" data-v="'+mi+'">Добавить все ('+open+')</button>';
     h+='</div>';
   });
   if(AS.busy)h+='<div class="m a muted">Думаю…</div>';
-  h+='</div><form class="composer" id="asform" autocomplete="off"><textarea id="asin" rows="1" placeholder="'+(SR?'Напиши или скажи помощнику':'Напиши помощнику')+'" aria-label="Сообщение помощнику"></textarea>'+micBtn('as')+'<button class="btn" aria-label="Отправить"'+(AS.busy?' disabled':'')+'>'+I('send')+'</button></form>';
+  h+='</div><form class="composer" id="asform" autocomplete="off">'+(window.HEALTH?HEALTH.asPending()+HEALTH.asAttach():'')+'<textarea id="asin" rows="1" placeholder="'+(window.HEALTH?'Сообщение или фото…':SR?'Напиши или скажи помощнику':'Напиши помощнику')+'" aria-label="Сообщение помощнику"></textarea>'+micBtn('as')+'<button class="btn" aria-label="Отправить"'+(AS.busy?' disabled':'')+'>'+I('send')+'</button></form>';
   return h;
 }
 async function askAssistant(mode,label,noteId,opts){
   if(AS.busy)return;asLoad();
-  var history=AS.msgs.filter(function(m){return !m.error;}).map(function(m){var c=m.content;if(m.role==='assistant'&&m.tasks&&m.tasks.length)c+='\n(предложено: '+m.tasks.map(function(t){return t.title;}).join('; ')+')';return{role:m.role,content:c};});
-  AS.msgs.push({role:'user',content:label});
+  var photos=(opts&&opts.photos)||[];
+  var history=AS.msgs.filter(function(m){return !m.error;}).map(function(m){var c=m.content;if(m.role==='assistant'&&m.tasks&&m.tasks.length)c+='\n(предложено: '+m.tasks.map(function(t){return t.title;}).join('; ')+')';
+    if(m.role==='user'&&m.photos&&m.photos.length)c+='\n(к этому сообщению были приложены фото: '+m.photos.length+')';
+    if(m.role==='assistant'&&m.entries&&m.entries.length&&window.HEALTH)c+='\n(предложено записать: '+HEALTH.asSummary(m)+')';
+    return{role:m.role,content:c};});
+  AS.msgs.push({role:'user',content:label,photos:photos});
   if(mode==='chat')history.push({role:'user',content:label});
   AS.busy=true;asSave();UI.view='assistant';render();asScroll();
   try{
-    var r=await sb.functions.invoke(FN_NAME,{body:{mode:mode,messages:history.slice(-12),today:T(),now:fmtLong(T())+', '+nowHM(),note_id:noteId||null}});
+    var images=photos.length&&window.HEALTH?await HEALTH.asImages(photos):[];
+    var r=await sb.functions.invoke(FN_NAME,{body:{mode:mode,messages:history.slice(-12),today:T(),now:fmtLong(T())+', '+nowHM(),note_id:noteId||null,images:images}});
     if(r.error){var msg=r.error.message;try{var j=await r.error.context.json();if(j&&j.error)msg=j.error;}catch(x){}throw new Error(msg);}
-    var a=r.data||{};AS.msgs.push({role:'assistant',content:a.reply||'Готово.',tasks:a.tasks||[],moves:a.moves||[],questions:a.questions||[]});
+    var a=r.data||{};AS.msgs.push({role:'assistant',content:a.reply||'Готово.',tasks:a.tasks||[],moves:a.moves||[],questions:a.questions||[],entries:window.HEALTH?HEALTH.asEntries(a,photos):[]});
     var auto=opts&&opts.autoAdd&&(a.tasks||[]).length&&!(a.questions||[]).length&&a.tasks.length<=5;
   }catch(e){AS.msgs.push({role:'assistant',error:true,content:'Не получилось: '+(e.message||'ошибка связи')+(/Failed to send|fetch/i.test(e.message||'')?'. Проверь, что функция помощника (assistant) опубликована в Supabase.':'')});}
   AS.busy=false;asSave();render();asScroll();
@@ -628,7 +635,7 @@ function render(){
   var ae=document.activeElement,keep=null;
   if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA')&&ae.closest('#app')){var fm=ae.form;keep={id:ae.id,cf:fm&&fm.getAttribute('data-cform'),sf:fm&&fm.getAttribute('data-subform'),v:ae.value,pos:ae.selectionStart};}
   var detail='';
-  if(pc){var t=UI.sel&&findTask(UI.sel);detail=t?'<aside class="detail" aria-label="Задача">'+detailHead(t)+'<div class="sb">'+taskDetail(t)+'</div><div class="sf">'+taskActions(t)+'</div></aside>':'<aside class="detail empty">Выбери задачу, чтобы увидеть подробности</aside>';}
+  if(pc&&(UI.sel||UI.view==='tasks'||UI.view==='inbox'||UI.view==='calendar')){var t=UI.sel&&findTask(UI.sel);detail=t?'<aside class="detail" aria-label="Задача">'+detailHead(t)+'<div class="sb">'+taskDetail(t)+'</div><div class="sf">'+taskActions(t)+'</div></aside>':'<aside class="detail empty">Выбери задачу, чтобы увидеть подробности</aside>';}
   app.innerHTML='<div class="shell">'+(pc?'<aside class="side">'+sidebar()+'</aside>':'')+'<main class="main"><div class="wrap">'+mainContent()+'</div></main>'+detail+'</div>'+(pc?'':bottomNav()+(UI.view==='tasks'||UI.view==='calendar'?'<button class="fab" data-a="add" aria-label="Новая задача">'+I('plus')+'</button>':''));
   var m2=app.querySelector('.main');if(m2)m2.scrollTop=scroll;
   bindMain();
@@ -645,7 +652,7 @@ function bindMain(){
       if(p.recur!=='none'&&!p.due_date)p.due_date=T();
       if(UI.filter!=='all')p.list_id=UI.filter;UI.quick='';qi.value='';var r=await createTask(p);if(r)toast('Добавлено: '+r.title+(r.due_date?', '+dayWord(r.due_date).toLowerCase()+(r.due_time?' в '+r.due_time:''):''));});}
   var af=document.getElementById('asform');if(af){var ai=document.getElementById('asin');ai.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();af.requestSubmit?af.requestSubmit():af.dispatchEvent(new Event('submit',{cancelable:true}));}});ai.addEventListener('input',function(){ai.style.height='auto';ai.style.height=Math.min(ai.scrollHeight,160)+'px';});
-    af.addEventListener('submit',function(e){e.preventDefault();var v=ai.value.trim();if(!v||AS.busy)return;ai.value='';askAssistant('chat',v);});}
+    af.addEventListener('submit',function(e){e.preventDefault();var v=ai.value.trim(),ph=window.HEALTH?HEALTH.asPendingPaths():[];if((!v&&!ph.length)||AS.busy)return;if(window.HEALTH&&HEALTH.asUploading()){toast('Фото ещё загружается, секунду');return;}ai.value='';var pics=window.HEALTH?HEALTH.asTake():[];askAssistant('chat',v||'Разбери фото',null,pics.length?{photos:pics}:null);});}
   var nq=document.getElementById('nq');if(nq)nq.addEventListener('input',function(){UI.q=nq.value;document.getElementById('nlist').innerHTML=notesList();});
 }
 
@@ -1083,6 +1090,8 @@ var A={
   asClear:function(){if(!confirm('Очистить переписку с помощником?'))return;AS.msgs=[];asSave();render();},
   asPlan:function(){askAssistant('plan','План на сегодня');},
   asNotes:function(){askAssistant('notes','Разобрать заметки');},
+  asFood:function(){askAssistant('food','Итоги питания за сегодня');},
+  asFit:function(){askAssistant('fit','Анализ тренировок');},
   asAdd:async function(v){var p=v.split(':');var r=await asAddTask(+p[0],+p[1]);if(r)toast('Добавлено: '+r.title);},
   asAddAll:async function(v){var m=AS.msgs[+v],n=0;for(var i=0;i<m.tasks.length;i++){if(!m.tasks[i]._added&&await asAddTask(+v,i))n++;}toast('Добавлено задач: '+n);},
   asMove:async function(v){var p=v.split(':'),mv=AS.msgs[+p[0]].moves[+p[1]];var f={due_date:/^\d{4}-\d{2}-\d{2}$/.test(mv.due_date||'')?mv.due_date:null};if(!f.due_date){f.due_time=null;f.recur='none';}await patchTask(mv.task_id,f);mv._done=true;asSave();render();toast('Перенесено');},
@@ -1161,7 +1170,7 @@ window.__app={A:A,UI:UI,D:D,parseQuick:parseQuick,nextOcc:nextOcc,
   /* для health.js («Питание» и «Тренировки») */
   T:T,addDays:addDays,diff:diff,fromKey:fromKey,fmtLong:fmtLong,fmtDM:fmtDM,dayWord:dayWord,esc:esc,uid:uid,plural:plural,I:I,nowHM:nowHM,
   toast:toast,err:err,q:q,sb:sb,SUPA_URL:SUPA_URL,SUPA_KEY:SUPA_KEY,render:render,renderSheet:renderSheet,closeSheet:closeSheet,
-  createTask:createTask,patchTask:patchTask,completeTask:completeTask,reopenTask:reopenTask,deleteTask:deleteTask,findTask:findTask,saveSettings:saveSettings};
+  AS:AS,asSave:asSave,createTask:createTask,patchTask:patchTask,completeTask:completeTask,reopenTask:reopenTask,deleteTask:deleteTask,findTask:findTask,saveSettings:saveSettings};
 Object.defineProperty(window.__app,'ME',{get:function(){return ME;}});
 Object.defineProperty(window.__app,'SET',{get:function(){return SET;}});
 })();
