@@ -1,4 +1,4 @@
-﻿(function(){
+(function(){
 'use strict';
 /* =================== Подключение =================== */
 var SUPA_URL='https://avegfmaiutxryomjzoch.supabase.co';
@@ -299,7 +299,7 @@ async function setMark(h,day,val){
 function daysText(h){if(!h.days||!h.days.length)return'каждый день';if(h.days.length===5&&h.days.indexOf(5)<0&&h.days.indexOf(6)<0)return'по будням';return h.days.slice().sort().map(function(i){return WD[i];}).join(', ');}
 
 /* =================== Уведомления =================== */
-var PUSH={state:'?'};
+var PUSH={state:'?'};try{fetch('apk.json?'+Date.now()).then(function(r){return r.ok?r.json():null;}).then(function(j){window.APKV=j;}).catch(function(){});}catch(e){}
 function isIOS(){return /iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}
 function isStandalone(){return (window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;}
 function urlB64(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var b=atob(s),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a;}
@@ -847,6 +847,7 @@ function settingsForm(){
   h+='<div><div class="gl">Задачи «каждый час» напоминают</div><div class="chips" style="align-items:center">с '+timeField('h_from',SET.hours.from,'09:00')+' до '+timeField('h_to',SET.hours.to,'21:00')+'</div></div>';
   h+='<div><div class="gl">Мои шаблоны</div>'+(D.templates.length?'<div class="chips">'+D.templates.map(function(x){return '<button class="chip" data-a="tplDel" data-id="'+x.id+'">'+esc(x.name)+' '+I('x')+'</button>';}).join('')+'</div>':'<div class="gh" style="margin:0">Создай задачу и нажми «Сохранить настройки как свой шаблон».</div>')+'</div>';
   h+='<div class="row2"><button class="btn2" data-a="lists">'+I('list')+'Управлять списками</button><button class="btn2" data-a="passOpen">'+I('gear')+'Сменить пароль</button></div>';
+  if(!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform())&&!isIOS()){h+='<div><div class="gl">Приложение для Android</div><a class="btn2" href="zadachi.apk" download="zadachi.apk" style="text-decoration:none;display:flex;align-items:center;justify-content:center;gap:8px">'+I('inbox')+'Скачать APK</a><div class="gh">Всегда последняя версия. Откройте скачанный файл и разрешите установку из этого источника. Напоминания, виджет на рабочий стол и отдельные звуки по разделам работают только в приложении.'+(window.APKV&&APKV.built?' Сборка от '+esc(APKV.built)+'.':'')+'</div></div>';}
   h+='<div class="gh">Установить на телефон: в Safari «Поделиться» → «На экран „Домой“», в Chrome меню ⋮ → «Добавить на главный экран».</div>';
   return h;
 }
