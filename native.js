@@ -105,6 +105,11 @@
   var hist = [], skipHist = false, go0 = X.A.go;
   X.A.go = function (v) { var prev = X.UI.view, r = go0.apply(this, arguments); if (!skipHist && X.UI.view !== prev) { hist.push(prev); if (hist.length > 30) hist.shift(); } return r; };
   X.A.nativeRefresh = async function () { await ST.refresh(); X.toast('Виджет: ' + ST.widget); if (X.UI.sheet) X.renderSheet(); };
+  X.A.nativeTest = async function () {
+    try { var p = await LN.checkPermissions(); if (p.display !== 'granted') p = await LN.requestPermissions(); ST.perm = p.display; if (p.display !== 'granted') { X.toast('Уведомления запрещены в настройках Android'); return; }
+      await LN.schedule({ notifications: [{ id: hash('test' + Date.now()), title: 'Проверка', body: 'Уведомления работают', schedule: { at: new Date(Date.now() + 3000), allowWhileIdle: true }, channelId: 'tasks', smallIcon: 'ic_stat' }] }); X.toast('Придёт через 3 секунды'); }
+    catch (e) { X.toast('Ошибка: ' + (e && e.message || e)); }
+  };
   function setupBack() {
     var APP = (C.Plugins && C.Plugins.App) || (C.registerPlugin && C.registerPlugin('App'));
     if (!APP || !APP.addListener) { ST.back = 'плагин App не найден'; return; }

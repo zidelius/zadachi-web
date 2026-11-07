@@ -303,14 +303,17 @@ var PUSH={state:'?'};try{fetch('apk.json?'+Date.now()).then(function(r){return r
 function isIOS(){return /iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}
 function isStandalone(){return (window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;}
 function urlB64(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var b=atob(s),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a;}
+function isNative(){return !!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform());}
 async function pushCheck(){
   try{
+    if(isNative()){PUSH.state='native';return;}
     if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){PUSH.state=isIOS()&&!isStandalone()?'ios-install':'unsupported';return;}
     if(Notification.permission==='denied'){PUSH.state='denied';return;}
     var reg=await navigator.serviceWorker.getRegistration();var sub=reg&&await reg.pushManager.getSubscription();PUSH.state=sub?'on':'off';
   }catch(e){PUSH.state='unsupported';}
 }
 function pushBlock(){
+  if(isNative()){var NS=window.NATIVE||{},den=NS.perm==='denied';return '<div class="rulebox"><div class="gl" style="margin:0;font-size:15px;color:var(--ink)">Уведомления</div><div style="font-size:14px;line-height:1.45">'+(den?'Уведомления запрещены. Включите их в настройках Android: Приложения → Задачи → Уведомления.':'Работают через приложение: напоминания приходят с самого телефона, даже без интернета. Звук для каждого раздела (задачи, привычки, лекарства, питание, тренировки, поддержка) можно выбрать в настройках Android: Приложения → Задачи → Уведомления.')+'</div><button class="btn2" data-a="nativeTest">'+I('bell')+'Проверить уведомление</button></div>';}
   var st=PUSH.state,txt={on:'Включены на этом устройстве.',off:'На этом устройстве выключены.',denied:'Уведомления запрещены в настройках браузера или телефона. Разреши их для этого сайта и обнови страницу.','ios-install':'На iPhone уведомления работают, только если сайт добавлен на экран «Домой»: в Safari «Поделиться» → «На экран „Домой“», потом открой сайт с этой иконки и включи уведомления здесь.',unsupported:'Этот браузер не поддерживает уведомления.','?':'Проверяю…'}[st]||'';
   var h='<div class="rulebox"><div class="gl" style="margin:0;font-size:15px;color:var(--ink)">Уведомления</div><div style="font-size:14px;line-height:1.45">'+txt+'</div>';
   if(st==='off')h+='<button class="btn" data-a="pushOn">'+I('bell')+'Включить на этом устройстве</button>';
