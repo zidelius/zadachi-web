@@ -470,7 +470,7 @@ function calView(){
     if(hs.length&&k<=t){h+=sec('Привычки','');hs.forEach(function(x){var on=hDone(x,k);h+='<div class="task"><button class="chk'+(on?' on':'')+'" data-a="habDay" data-id="'+x.id+'" data-v="'+k+'" aria-label="'+esc(x.name)+'"><span style="'+(on?'background:'+esc(x.color)+';border-color:'+esc(x.color):'')+'">'+(on?I('check'):'')+'</span></button><div class="tb"><span class="tt">'+esc(x.name)+'</span>'+(tgt(x)>1?'<span class="meta"><span>'+cnt(x,k)+' из '+tgt(x)+'</span></span>':'')+'</div></div>';});}
     var ts=tasksOn(k),lg=logOn(k);
     if(ts.length){h+=sec('Запланировано','');ts.forEach(function(x){h+=taskRow(x,k<t?'overdue':k===t?'today':'later');});}
-    if(lg.length){h+=sec('Сделано','');lg.forEach(function(l){h+='<div class="drow"><span class="b">'+I('check')+'</span>'+esc(l.title)+'<span class="at">'+new Date(l.created_at).toTimeString().slice(0,5)+'</span></div>';});}
+    if(lg.length){h+=sec('Сделано','');lg.forEach(function(l){h+='<div class="drow"><span class="b">'+I('check')+'</span><div class="dt"><span class="dtx open">'+esc(l.title)+'</span></div>'+logUndoBtn(l)+'<span class="at">'+new Date(l.created_at).toTimeString().slice(0,5)+'</span></div>';});}
     if(!hs.length&&!ts.length&&!lg.length)h+='<div class="empty">На этот день ничего нет.</div>';
   }else if(mode==='week'){
     var m0=addDays(k,-dow(k));h+='<div class="wcols">';
@@ -491,14 +491,15 @@ function calView(){
   }
   return h;
 }
+function logUndoBtn(l){var t=l.task_id&&findTask(l.task_id);return t&&t.done&&t.recur==='none'?'<button class="iconbtn dundo" data-a="logUndo" data-id="'+l.id+'" aria-label="Вернуть в работу" title="Вернуть в работу">'+I('left')+'</button>':'';}
 function diaryView(){
   var days={};
-  D.log.filter(function(l){return l.user_id===ME;}).forEach(function(l){var tk=l.task_id&&findTask(l.task_id);(days[l.day]=days[l.day]||[]).push({id:l.id,t:l.title,at:new Date(l.created_at).toTimeString().slice(0,5),subs:tk&&tk.subs&&tk.subs.length?tk.subs:null});});
+  D.log.filter(function(l){return l.user_id===ME;}).forEach(function(l){var tk=l.task_id&&findTask(l.task_id);(days[l.day]=days[l.day]||[]).push({id:l.id,t:l.title,at:new Date(l.created_at).toTimeString().slice(0,5),subs:tk&&tk.subs&&tk.subs.length?tk.subs:null,undo:logUndoBtn(l)});});
   D.habits.forEach(function(h){var m=D.marks[h.id]||{};Object.keys(m).forEach(function(d){if(m[d]>=tgt(h))(days[d]=days[d]||[]).push({t:h.name,at:'',c:h.color});});});
   var keys=Object.keys(days).sort().reverse();
   var h='<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">Дневник</h1></div></div>';
   if(!keys.length)return h+'<div class="empty">Здесь по дням будут выполненные задачи и привычки.</div>';
-  keys.slice(0,90).forEach(function(k){var d=diff(k,T());h+='<div class="dday">'+(d===0?'Сегодня':d===-1?'Вчера':fmtDM(k))+'</div>';days[k].forEach(function(x){var open=x.id&&UI.dopen===x.id;h+='<div class="drow"><span class="b"'+(x.c?' style="background:'+esc(x.c)+'"':'')+'>'+I('check')+'</span><div class="dt"><button type="button" class="dtx'+(open?' open':'')+'" data-a="dTog" data-v="'+(x.id||'')+'">'+esc(x.t)+'</button>'+(x.subs?'<div class="dsubs">'+x.subs.map(function(s){return '<div class="dsub'+(s.done?' done':'')+'">'+(s.done?'✓':'○')+' '+esc(s.t)+'</div>';}).join('')+'</div>':'')+'</div><span class="at">'+x.at+'</span></div>';});});
+  keys.slice(0,90).forEach(function(k){var d=diff(k,T());h+='<div class="dday">'+(d===0?'Сегодня':d===-1?'Вчера':fmtDM(k))+'</div>';days[k].forEach(function(x){var open=x.id&&UI.dopen===x.id;h+='<div class="drow"><span class="b"'+(x.c?' style="background:'+esc(x.c)+'"':'')+'>'+I('check')+'</span><div class="dt"><button type="button" class="dtx'+(open?' open':'')+'" data-a="dTog" data-v="'+(x.id||'')+'">'+esc(x.t)+'</button>'+(x.subs?'<div class="dsubs">'+x.subs.map(function(s){return '<div class="dsub'+(s.done?' done':'')+'">'+(s.done?'✓':'○')+' '+esc(s.t)+'</div>';}).join('')+'</div>':'')+'</div>'+(x.undo||'')+'<span class="at">'+x.at+'</span></div>';});});
   return h;
 }
 function habitsView(){
@@ -657,7 +658,7 @@ function bindMain(){
       if(!p.due_date){var dd={};defaultsInto(dd);p.due_date=dd.due_date;if(!p.due_time){p.due_time=dd.due_time;p.remind_every=dd.due_time?dd.remind_every:0;p.remind_times=dd.remind_times;}}
       if(p.recur!=='none'&&!p.due_date)p.due_date=T();
       if(UI.filter!=='all')p.list_id=UI.filter;UI.quick='';qi.value='';var r=await createTask(p);if(r)toast('Добавлено: '+r.title+(r.due_date?', '+dayWord(r.due_date).toLowerCase()+(r.due_time?' в '+r.due_time:''):''));});}
-  var af=document.getElementById('asform');if(af){var ai=document.getElementById('asin');ai.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();af.requestSubmit?af.requestSubmit():af.dispatchEvent(new Event('submit',{cancelable:true}));}});ai.addEventListener('input',function(){ai.style.height='auto';ai.style.height=Math.min(ai.scrollHeight,160)+'px';});
+  var af=document.getElementById('asform');if(af){var ai=document.getElementById('asin');ai.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();af.requestSubmit?af.requestSubmit():af.dispatchEvent(new Event('submit',{cancelable:true}));}});ai.addEventListener('input',function(){ai.style.height='42px';var sh=ai.scrollHeight;ai.style.height=Math.max(42,Math.min(sh,160))+'px';});
     af.addEventListener('submit',function(e){e.preventDefault();var v=ai.value.trim(),ph=window.HEALTH?HEALTH.asPendingPaths():[];if((!v&&!ph.length)||AS.busy)return;if(window.HEALTH&&HEALTH.asUploading()){toast('Фото ещё загружается, секунду');return;}ai.value='';var pics=window.HEALTH?HEALTH.asTake():[];askAssistant('chat',v||'Разбери фото',null,pics.length?{photos:pics}:null);});}
   var nq=document.getElementById('nq');if(nq)nq.addEventListener('input',function(){UI.q=nq.value;document.getElementById('nlist').innerHTML=notesList();});
 }
@@ -1038,6 +1039,7 @@ var A={
   hwk:function(v){var n=(UI.sheet.off||0)+(+v);if(n>0)return;UI.sheet.off=n;renderSheet();},
   habPause:async function(v,id){var h=findHabit(id);h.paused=!h.paused;renderSheet();render();try{await q(sb.from('habits').update({paused:h.paused}).eq('id',id));}catch(e){err(e);}},
   habFinish:async function(v,id){var h=findHabit(id);if(!confirm('Завершить привычку «'+h.name+'»? Она уйдёт из списка, отметки останутся в дневнике.'))return;h.finished=true;closeSheet();render();try{await q(sb.from('habits').update({finished:true}).eq('id',id));}catch(e){err(e);}},
+  logUndo:function(v,id){var l=D.log.filter(function(x){return x.id===id;})[0];if(!l)return;var t=findTask(l.task_id);if(!t){toast('Задача уже удалена');return;}if(t.done)reopenTask(t.id);else{D.log=D.log.filter(function(x){return x!==l;});sb.from('task_log').delete().eq('id',l.id).then(function(){});render();}},
   dTog:function(v){UI.dopen=UI.dopen===v?null:v;render();},
   habEdit:function(v,id){var h=findHabit(id),ds=h.days||[],wk=ds.length===5&&ds.indexOf(5)<0&&ds.indexOf(6)<0;UI.sheet={type:'habit-edit',id:id,name:h.name,icon:h.icon,color:h.color,target:h.target,dmode:!ds.length?'all':wk?'wk':'pick',days:ds.slice(),remind:h.remind,times:[h.remind].concat(h.remind_at||[]).filter(Boolean),remind_every:h.remind_every||0};renderSheet(true);},
   habDel:async function(v,id){if(!confirm('Удалить привычку вместе со всеми отметками?'))return;D.habits=D.habits.filter(function(h){return h.id!==id;});closeSheet();render();try{await q(sb.from('habits').delete().eq('id',id));toast('Привычка удалена');}catch(e){err(e);}},

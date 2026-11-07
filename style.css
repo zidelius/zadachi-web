@@ -521,3 +521,10 @@ html,body{overflow-x:hidden}
 .dsubs{margin-top:6px;display:flex;flex-direction:column;gap:3px}
 .dsub{font-size:13px;color:var(--muted);line-height:1.35}
 .drow .at{padding-top:2px;flex-shrink:0}
+/* возврат выполненной задачи в работу из дневника и календаря */
+.dundo{width:34px;height:34px;flex-shrink:0;color:var(--muted);margin:-4px 0}
+.dundo svg.i{width:18px;height:18px}
+/* поле ввода помощника: ровная высота, не прыгает при переносе */
+.composer{flex-wrap:wrap;align-items:flex-end}
+.composer textarea{flex:1 1 120px;min-width:0;box-sizing:border-box;height:42px;min-height:42px;padding:10px 6px;line-height:22px;display:block}
+.composer textarea::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
