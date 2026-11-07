@@ -1,4 +1,4 @@
-/* Раздел «Здоровье»: аптечка и БАДы, приём и расписания, нутриенты, анализы.
+﻿/* Раздел «Здоровье»: аптечка и БАДы, приём и расписания, нутриенты, анализы.
    Подключается после health.js. Расписания приёма и повторяющиеся напоминания о еде и тренировках
    построены на привычках (habits): они дают время, дни недели, повторы и кнопку «Отметить» прямо в уведомлении.
    Справка, а не врач: приложение ничего не назначает. */
@@ -780,7 +780,7 @@
   Object.assign(A, actions);
 
   window.WELL = {
-    load: load, view: view, sheet: sheet, nutMeta: nutMeta, summaryText: summaryText,
+    load: load, view: view, sheet: sheet, habits: function () { return W.habits; }, plans: function () { return W.plans; }, nutMeta: nutMeta, summaryText: summaryText,
     owns: function (t) { return !!OWN[t]; }, asEntries: asEntries, entryInfo: entryInfo, entryText: entryText, addFrom: addFrom
   };
   /* если основное приложение уже успело загрузиться раньше этого файла — догружаем данные раздела */
