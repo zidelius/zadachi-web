@@ -98,6 +98,8 @@ async function loadAll(){
   D.marks={};res[6].forEach(function(m){(D.marks[m.habit_id]=D.marks[m.habit_id]||{})[m.day]=m.count;});
   D.notes=res[7];D.templates=res[8];D.nmembers=res[9]||[];
   var me=prof(ME);SET=Object.assign(JSON.parse(JSON.stringify(SET_DEF)),(me&&me.settings)||{});SET.def=Object.assign({},SET_DEF.def,SET.def||{});
+  /* вид (ПК/телефон) - настройка конкретного устройства, а не аккаунта: иначе выбор на телефоне переезжает на компьютер */
+  try{SET.layout=localStorage.getItem('zd_layout')||'auto';}catch(e){SET.layout='auto';}
   if(window.HEALTH)await HEALTH.load();
   if(window.WELL)await WELL.load();
 }
@@ -135,7 +137,7 @@ document.addEventListener('visibilitychange',function(){if(!document.hidden&&ME)
 
 /* =================== Настройки и тема =================== */
 var saveSetTimer=null;
-function saveSettings(){applyTheme();clearTimeout(saveSetTimer);saveSetTimer=setTimeout(function(){q(sb.from('profiles').update({settings:SET}).eq('id',ME)).catch(err);},500);}
+function saveSettings(){try{localStorage.setItem('zd_layout',SET.layout||'auto');}catch(e){}applyTheme();clearTimeout(saveSetTimer);saveSetTimer=setTimeout(function(){var out=Object.assign({},SET);delete out.layout;q(sb.from('profiles').update({settings:out}).eq('id',ME)).catch(err);},500);}
 function lum(hex){var h=hex.replace('#','');if(h.length===3)h=h.split('').map(function(c){return c+c;}).join('');var r=parseInt(h.substr(0,2),16)/255,g=parseInt(h.substr(2,2),16)/255,b=parseInt(h.substr(4,2),16)/255;function f(c){return c<=.03928?c/12.92:Math.pow((c+.055)/1.055,2.4);}return .2126*f(r)+.7152*f(g)+.0722*f(b);}
 function isDark(){return SET.theme==='dark'||(SET.theme==='auto'&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches);}
 function applyTheme(){

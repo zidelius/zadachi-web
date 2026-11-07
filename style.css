@@ -528,3 +528,17 @@ html,body{overflow-x:hidden}
 .composer{flex-wrap:wrap;align-items:flex-end}
 .composer textarea{flex:1 1 120px;min-width:0;box-sizing:border-box;height:42px;min-height:42px;padding:10px 6px;line-height:22px;display:block}
 .composer textarea::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* ===== вид для компьютера ===== */
+body.pc .qtyform{flex-wrap:nowrap}
+body.pc .qtyform>.fld:first-child{flex:1 1 auto}
+body.pc .qtyform .hq{flex:0 0 130px}
+body.pc .dtx{-webkit-line-clamp:2}
+body.pc .habrow{flex-wrap:nowrap}
+body.pc .habdays{width:auto;margin-left:auto}
+body.pc .composer textarea{padding-top:10px}
+body.pc .fields{max-width:760px}
+body.pc .chipsrow.wrapit{overflow:visible}
+body.pc .detail .hd{display:flex;align-items:center;gap:8px;padding:18px 14px 4px 22px}
+body.pc .detail .hd h3{flex:1;margin:0;font-size:18px}
+body.pc .detail .sb{padding-left:22px;padding-right:22px}
+body.pc .detail .sf{padding-left:22px;padding-right:22px}
