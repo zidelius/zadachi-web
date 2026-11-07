@@ -448,3 +448,17 @@ body.pc .tabs.dragging,body.pc .chipsrow.dragging,body.pc .habits.dragging{curso
 .top{flex-wrap:wrap}
 .dh{font-size:clamp(30px,9.5vw,40px)}
 .tbtns{margin-left:auto}
+
+/* индикатор загрузки фото */
+.hload{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:11px;color:var(--muted);border:1.5px solid var(--faint)}
+.hload .spin{width:22px;height:22px;border-radius:50%;border:2.5px solid var(--faint);border-top-color:var(--ink,#141414);animation:hspin .8s linear infinite;display:block}
+.hph.sm.hload .spin{width:18px;height:18px}
+@keyframes hspin{to{transform:rotate(360deg)}}
+
+/* календарь на узком экране не шире экрана */
+.calnav{flex-wrap:wrap}
+.calnav .pills{max-width:100%}
+.wrap,.main{min-width:0;max-width:100%}
+html,body{overflow-x:hidden}
+
+.calnav .btn2[disabled]{opacity:.45;cursor:default}

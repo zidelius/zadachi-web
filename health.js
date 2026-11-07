@@ -1,4 +1,4 @@
-/* Разделы «Питание» и «Тренировки».
+﻿/* Разделы «Питание» и «Тренировки».
    Подключается после app.js и использует его функции (render, q, sb, createTask, toast и т. д.).
    Запланированные приёмы пищи и тренировки создают обычную задачу, поэтому работают напоминания,
    календарь и кнопки в уведомлениях. Отметка в любом из двух мест синхронизируется. */
@@ -123,19 +123,30 @@
     if (r.error) throw r.error;
     return r.data;
   }
+  /* загрузка с повторами: на слабой сети первая попытка часто падает */
+  async function upPhoto(b) {
+    var path = X.ME + '/' + uid() + '.jpg', last;
+    for (var a = 0; a < 3; a++) {
+      try {
+        var u = await Promise.race([sb.storage.from(BUCKET).upload(path, b, { contentType: 'image/jpeg', upsert: true }), new Promise(function (_, rej) { setTimeout(function () { rej(new Error('Загрузка зависла')); }, 40000); })]);
+        if (u && u.error) throw u.error;
+        BLOBS[path] = b; return path;
+      } catch (e) { last = e; await new Promise(function (r) { setTimeout(r, 700 * (a + 1)); }); }
+    }
+    throw new Error('Не удалось загрузить фото: ' + ((last && last.message) || 'нет связи') + '. Проверь интернет и попробуй ещё раз.');
+  }
   async function addPhotos(files) {
     var s = UI.sheet; if (!s || !s.photos) return;
-    s._up = true; renderSheet();
-    try {
-      for (var i = 0; i < files.length && s.photos.length < 4; i++) {
+    s._up = (s._up || 0) + files.length; renderSheet();
+    for (var i = 0; i < files.length; i++) {
+      try {
+        if (s.photos.length >= 4) { toast('Максимум 4 фото'); break; }
         var b = await shrink(files[i]);
-        var path = X.ME + '/' + uid() + '.jpg';
-        var u = await sb.storage.from(BUCKET).upload(path, b, { contentType: 'image/jpeg' });
-        if (u.error) throw u.error;
-        BLOBS[path] = b; s.photos.push(path);
-      }
-    } catch (e) { err(e); }
-    s._up = false; if (UI.sheet === s) renderSheet();
+        s.photos.push(await upPhoto(b));
+      } catch (e) { err(e); }
+      s._up = Math.max(0, (s._up || 1) - 1); if (UI.sheet === s) renderSheet();
+    }
+    s._up = 0; if (UI.sheet === s) renderSheet();
   }
   function hydrate() {
     var imgs = document.querySelectorAll('img[data-ph]:not([src])');
@@ -158,8 +169,9 @@
     (s.photos || []).forEach(function (p, i) {
       h += '<div class="hph"><img data-ph="' + esc(p) + '" alt="Фото"><button type="button" data-a="hPhotoDel" data-v="' + i + '" aria-label="Убрать фото">' + I('x') + '</button></div>';
     });
-    if ((s.photos || []).length < 4) {
-      h += '<label class="hadd">' + CAM + '<span>' + (s._up ? 'Загрузка…' : 'Снять') + '</span><input type="file" accept="image/*" capture="environment" data-hfile hidden></label>';
+    for (var u = 0; u < (s._up || 0); u++) h += '<div class="hph hload" role="status" aria-label="Загружаю фото"><i class="spin"></i><span>Загружаю…</span></div>';
+    if ((s.photos || []).length + (s._up || 0) < 4) {
+      h += '<label class="hadd">' + CAM + '<span>' + 'Снять' + '</span><input type="file" accept="image/*" capture="environment" data-hfile hidden></label>';
       h += '<label class="hadd">' + I('inbox') + '<span>Галерея</span><input type="file" accept="image/*" multiple data-hfile hidden></label>';
     }
     return h + '</div>';
@@ -206,6 +218,8 @@
         if (r.kcal != null) s.kcal = r1(r.kcal);
         s.metrics = (r.metrics || []).map(function (m) { return { name: m.name, value: m.value, unit: m.unit || '' }; });
         s._note = r.notes || '';
+        var lifts = fromAiExercises(r.exercises);
+        if (lifts.length) { s.exercises = lifts; s.kind = 'strength'; s._note = (s._note ? s._note + ' ' : '') + 'Нашёл упражнений: ' + lifts.length + '. Нагрузка и прогресс посчитаются после сохранения.'; }
       } else if (mode === 'body') {
         if (r.weight_kg != null) s.weight = r1(r.weight_kg);
         if (r.fat_pct != null) s.fat = r1(r.fat_pct);
@@ -739,6 +753,12 @@
     }
     return h;
   }
+  /* упражнения из ответа ИИ -> формат записи (общий для разбора текста и фото) */
+  function fromAiExercises(list) {
+    return (list || []).map(function (e) {
+      return { name: e.name, muscles: mapMuscles(e.muscles), sets: (e.sets || []).filter(function (x) { return +x.reps > 0; }).map(function (x) { return { reps: Math.round(+x.reps), weight: x.weight_kg == null ? null : +x.weight_kg, warmup: !!x.warmup }; }) };
+    }).filter(function (e) { return e.name && e.sets.length; });
+  }
   async function liftGo() {
     var s = UI.sheet; if (!s || s._lifting) return;
     var text = (s.liftText || '').trim();
@@ -1043,7 +1063,7 @@
   function asAttach() { return '<label class="iconbtn asatt" aria-label="Прикрепить фото">' + CAM + '<input type="file" accept="image/*" multiple data-asfile hidden></label>'; }
   function asPending() {
     if (!PEND.length && !PEND_UP) return '';
-    return '<div class="aspend">' + PEND.map(function (p, i) { return '<div class="hph sm"><img data-ph="' + esc(p) + '" alt="Фото"><button type="button" data-a="hAsPhDel" data-v="' + i + '" aria-label="Убрать фото">' + I('x') + '</button></div>'; }).join('') + (PEND_UP ? '<div class="hph sm hload">…</div>' : '') + '</div>';
+    return '<div class="aspend">' + PEND.map(function (p, i) { return '<div class="hph sm"><img data-ph="' + esc(p) + '" alt="Фото"><button type="button" data-a="hAsPhDel" data-v="' + i + '" aria-label="Убрать фото">' + I('x') + '</button></div>'; }).join('') + (function () { var o = ''; for (var k = 0; k < PEND_UP; k++) o += '<div class="hph sm hload" role="status" aria-label="Загружаю фото"><i class="spin"></i></div>'; return o; })() + '</div>';
   }
   function asPhotos(paths) { return '<div class="asph">' + paths.map(function (p) { return '<img data-ph="' + esc(p) + '" alt="Фото">'; }).join('') + '</div>'; }
   async function asImages(paths) {
@@ -1061,10 +1081,8 @@
     for (var i = 0; i < files.length; i++) {
       try {
         if (PEND.length >= 4) throw new Error('К одному сообщению можно приложить до 4 фото');
-        var b = await shrink(files[i]), path = X.ME + '/' + uid() + '.jpg';
-        var u = await sb.storage.from(BUCKET).upload(path, b, { contentType: 'image/jpeg' });
-        if (u.error) throw u.error;
-        BLOBS[path] = b; PEND.push(path);
+        var b = await shrink(files[i]);
+        PEND.push(await upPhoto(b));
       } catch (e) { err(e); }
       PEND_UP--;
     }
@@ -1136,8 +1154,35 @@
   async function addWorkoutFrom(d, photos) {
     var day = d.day || T();
     var row = { owner: X.ME, day: day, at: d.at || null, kind: d.kind in FKIND ? d.kind : 'other', title: d.title, minutes: d.minutes, kcal: d.kcal, note: d.note || '', photos: photos || [], metrics: d.metrics || [], exercises: cleanExercises(d.exercises), planned: !!d.planned, ai: { source: 'assistant' } };
+    /* страховка: силовая без упражнений (ИИ иногда их не заполняет) - добираем из фото или из текста записи */
+    if (row.kind === 'strength' && !row.planned && !row.exercises.length) {
+      try {
+        var got = [];
+        if ((photos || []).length) {
+          var imgs = []; for (var i = 0; i < photos.length; i++) imgs.push({ media_type: 'image/jpeg', data: await blobB64(await photoBlob(photos[i])) });
+          got = fromAiExercises((await callAI({ mode: 'fit', images: imgs, text: '' })).exercises);
+        }
+        var txt = [row.title, row.note].filter(Boolean).join('. ');
+        if (!got.length && /\d/.test(txt)) got = fromAiExercises((await callAI({ mode: 'lift', text: txt, known: knownExercises() })).exercises);
+        if (got.length) row.exercises = cleanExercises(got);
+      } catch (e) { /* без упражнений тоже сохраняем */ }
+    }
+    if (!row.planned) await fillMuscles(row.exercises);
     if (row.planned) row.task_id = await makeTask('Тренировка', row.title, row.day, row.at);
     var saved = await q(sb.from('workouts').insert(row).select().single()); H.workouts.push(saved);
+  }
+  /* без мышц у упражнения карта нагрузки остаётся пустой: берём мышцы из истории или просим ИИ */
+  async function fillMuscles(exs) {
+    var bad = exs.filter(function (e) { return !Object.keys(e.muscles || {}).length; });
+    if (!bad.length) return;
+    H.workouts.forEach(function (w) { (w.exercises || []).forEach(function (e) { if (!Object.keys(e.muscles || {}).length) return; bad.forEach(function (b) { if (!Object.keys(b.muscles || {}).length && normName(b.name) === normName(e.name)) b.muscles = e.muscles; }); }); });
+    bad = bad.filter(function (e) { return !Object.keys(e.muscles || {}).length; });
+    if (!bad.length) return;
+    try {
+      var text = bad.map(function (e) { return e.name + ': ' + (e.sets[0] ? e.sets.length + 'x' + e.sets[0].reps : '3x10'); }).join('\n');
+      var got = fromAiExercises((await callAI({ mode: 'lift', text: text, known: knownExercises() })).exercises);
+      bad.forEach(function (b) { got.forEach(function (g) { if (normName(g.name) === normName(b.name) || got.length === bad.length) { if (!Object.keys(b.muscles || {}).length && normName(g.name) === normName(b.name)) b.muscles = g.muscles; } }); });
+    } catch (e) { /* оставим как есть */ }
   }
   async function addBodyFrom(d, photos) {
     var saved = await q(sb.from('body_log').insert({ owner: X.ME, day: d.day || T(), weight: d.weight, fat: d.fat, muscle: d.muscle, waist: d.waist, note: d.note || '', photos: photos || [], ai: { source: 'assistant' } }).select().single()); H.body.push(saved);

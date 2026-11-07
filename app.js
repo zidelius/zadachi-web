@@ -1,4 +1,4 @@
-(function(){
+﻿(function(){
 'use strict';
 /* =================== Подключение =================== */
 var SUPA_URL='https://avegfmaiutxryomjzoch.supabase.co';
@@ -455,7 +455,9 @@ function calView(){
   var modes=[['day','День'],['week','Неделя'],['month','Месяц'],['year','Год']];
   var h='<div class="top"><div><div class="date">'+fmtLong(t)+'</div><h1 class="dh">Календарь</h1></div></div>';
   var label=mode==='day'?fmtLong(k):mode==='week'?fmtDM(addDays(k,-dow(k)))+' – '+fmtDM(addDays(k,6-dow(k))):mode==='month'?fmt(k,{month:'long',year:'numeric'}):String(fromKey(k).getFullYear());
-  h+='<div class="calnav"><div class="pills" role="tablist">'+modes.map(function(m){return '<button role="tab" aria-selected="'+(m[0]===mode)+'" class="'+(m[0]===mode?'on':'')+'" data-a="calMode" data-v="'+m[0]+'">'+m[1]+'</button>';}).join('')+'</div><div style="display:flex;align-items:center;gap:4px"><button class="iconbtn" data-a="calNav" data-v="-1" aria-label="Назад">'+I('left')+'</button><button class="btn2" style="height:36px" data-a="calToday">Сегодня</button><button class="iconbtn" data-a="calNav" data-v="1" aria-label="Вперёд">'+I('right')+'</button></div></div>';
+  var nav2={day:['Предыдущий день','Следующий день','Сегодня'],week:['Предыдущая неделя','Следующая неделя','Эта неделя'],month:['Предыдущий месяц','Следующий месяц','Этот месяц'],year:['Предыдущий год','Следующий год','Этот год']}[mode];
+  var tk=fromKey(t),kk=fromKey(k),isCur=mode==='day'?k===t:mode==='week'?addDays(k,-dow(k))===addDays(t,-dow(t)):mode==='month'?(kk.getFullYear()===tk.getFullYear()&&kk.getMonth()===tk.getMonth()):kk.getFullYear()===tk.getFullYear();
+  h+='<div class="calnav"><div class="pills" role="tablist">'+modes.map(function(m){return '<button role="tab" aria-selected="'+(m[0]===mode)+'" class="'+(m[0]===mode?'on':'')+'" data-a="calMode" data-v="'+m[0]+'">'+m[1]+'</button>';}).join('')+'</div><div style="display:flex;align-items:center;gap:4px"><button class="iconbtn" data-a="calNav" data-v="-1" aria-label="'+nav2[0]+'">'+I('left')+'</button><button class="btn2" style="height:36px" data-a="calToday"'+(isCur?' disabled':'')+'>'+nav2[2]+'</button><button class="iconbtn" data-a="calNav" data-v="1" aria-label="'+nav2[1]+'">'+I('right')+'</button></div></div>';
   h+='<div class="calnav" style="margin-top:10px"><b>'+esc(label)+'</b></div>';
   if(mode==='day'){
     var mon=addDays(k,-dow(k));h+='<div class="week">';
@@ -608,7 +610,7 @@ async function asAddTask(mi,ti){var m=AS.msgs[mi],t=m&&m.tasks[ti];if(!t||t._add
 function sidebar(){
   var nav=function(v,icn,t,n){return '<button class="'+(UI.view===v&&(v!=='tasks'||UI.filter==='all')?'on':'')+'" data-a="go" data-v="'+v+'">'+I(icn)+'<span class="l">'+t+'</span>'+(n?'<span class="n">'+n+'</span>':'')+'</button>';};
   var todayN=myTasks().filter(function(t){return !t.done&&!hiddenTask(t)&&groupOf(t)==='today';}).length;
-  var h='<div class="logo" style="padding:0 12px"><b>'+I('check')+'</b>задачи</div><div class="nav">'+nav('tasks','sun','Задачи',todayN||'')+nav('inbox','inbox','Входящие',inbox().length||'')+nav('calendar','cal','Календарь')+nav('habits','drop','Привычки')+nav('food','leaf','Питание')+nav('fit','dumb','Тренировки')+nav('well','heart','Здоровье')+nav('diary','book','Дневник')+nav('notes','note','Заметки')+nav('assistant','spark','Помощник')+'</div>';
+  var h='<div class="logo" style="padding:0 12px"><b>'+I('check')+'</b>задачи</div><div class="nav">'+nav('tasks','sun','Задачи',todayN||'')+nav('inbox','inbox','Входящие',inbox().length||'')+nav('calendar','cal','Календарь')+nav('habits','drop','Привычки')+nav('food','leaf','Питание')+nav('fit','dumb','Тренировки')+nav('well','heart','Здоровье')+nav('support','star','Поддержка')+nav('diary','book','Дневник')+nav('notes','note','Заметки')+nav('assistant','spark','Помощник')+'</div>';
   var own=D.lists.filter(function(l){return !isShared(l);}),sh=D.lists.filter(isShared);
   var li=function(l){var n=myTasks().filter(function(t){return t.list_id===l.id&&!t.done;}).length;return '<button class="'+(UI.view==='tasks'&&UI.filter===l.id?'on':'')+'" data-a="filter" data-v="'+l.id+'"><i class="dot" style="--c:'+esc(l.color)+'"></i><span class="l">'+esc(l.name)+'</span><span class="n">'+(l.hidden?I('eyeoff'):'')+(n||'')+'</span></button>';};
   h+='<div class="nav"><div class="t">Списки</div>'+own.map(li).join('')+'<button data-a="listNew">'+I('plus')+'<span class="l">Новый список</span></button></div>';
@@ -624,10 +626,10 @@ function bottomNav(){
 function moreView(){
   var n=inbox().length;
   var r=function(v,icn,t,x){return '<button class="lrow" data-a="go" data-v="'+v+'">'+I(icn)+'<b>'+t+'</b>'+(x||'')+I('right')+'</button>';};
-  return '<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">Ещё</h1></div></div><div class="fields" style="margin-top:18px">'+r('inbox','inbox','Входящие',n?'<span class="badge">'+n+'</span>':'')+r('habits','drop','Привычки')+r('food','leaf','Питание')+r('fit','dumb','Тренировки')+r('well','heart','Здоровье')+r('diary','book','Дневник')+'<button class="lrow" data-a="lists">'+I('list')+'<b>Списки</b>'+I('right')+'</button><button class="lrow" data-a="settings">'+I('gear')+'<b>Настройки</b>'+I('right')+'</button></div>';
+  return '<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">Ещё</h1></div></div><div class="fields" style="margin-top:18px">'+r('inbox','inbox','Входящие',n?'<span class="badge">'+n+'</span>':'')+r('habits','drop','Привычки')+r('food','leaf','Питание')+r('fit','dumb','Тренировки')+r('well','heart','Здоровье')+r('support','star','Поддержка')+r('diary','book','Дневник')+'<button class="lrow" data-a="lists">'+I('list')+'<b>Списки</b>'+I('right')+'</button><button class="lrow" data-a="settings">'+I('gear')+'<b>Настройки</b>'+I('right')+'</button></div>';
 }
 function mainContent(){
-  switch(UI.view){case'inbox':return inboxView();case'calendar':return calView();case'diary':return diaryView();case'habits':return habitsView();case'food':return window.HEALTH?HEALTH.foodView():'';case'fit':return window.HEALTH?HEALTH.fitView():'';case'well':return window.WELL?WELL.view():'';case'notes':return notesView();case'more':return moreView();case'assistant':return assistantView();default:return tasksView();}
+  switch(UI.view){case'inbox':return inboxView();case'calendar':return calView();case'diary':return diaryView();case'habits':return habitsView();case'food':return window.HEALTH?HEALTH.foodView():'';case'fit':return window.HEALTH?HEALTH.fitView():'';case'well':return window.WELL?WELL.view():'';case'support':return window.WELL?WELL.supportView():'';case'notes':return notesView();case'more':return moreView();case'assistant':return assistantView();default:return tasksView();}
 }
 function render(){
   if(!ME)return;

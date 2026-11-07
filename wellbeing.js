@@ -332,8 +332,9 @@
     switch (s.type) {
       case 'w-item': return { title: s.id ? (s.kind === 'supp' ? 'БАД или витамин' : 'Лекарство') : 'Новая позиция', body: itemSheet(s), foot: '<button class="btn" data-a="wItemSave">Сохранить</button>' + (s.id ? '<div class="row2"><button class="btn2" data-a="wTakeNow" data-id="' + s.id + '">Принял(а) сейчас</button><button class="btn2" data-a="wPlanFromItem">Расписание</button></div><button class="btn2" data-a="wItemAsk">Спросить помощника про препарат</button><button class="btn2 warn" data-a="wItemDel">Удалить</button>' : '') };
       case 'w-intake': return { title: s.id ? 'Приём' : 'Записать приём', body: intakeSheet(s), foot: '<button class="btn" data-a="wIntakeSave">Сохранить</button>' + (s.id ? '<button class="btn2 warn" data-a="wIntakeDel">Удалить</button>' : '') };
-      case 'w-plan': return { title: s.id ? 'Расписание' : (s.pk === 'med' ? 'Новое расписание приёма' : s.pk === 'meal' ? 'Напоминание о еде' : 'Напоминание о тренировке'), body: planSheet(s), foot: '<button class="btn" data-a="wPlanSave">Сохранить</button>' + (s.id ? '<button class="btn2 warn" data-a="wPlanDel">Удалить</button>' : '') };
+      case 'w-plan': return { title: s.id ? (s.pk === 'nudge' ? 'Напоминание поддержки' : 'Расписание') : (s.pk === 'med' ? 'Новое расписание приёма' : s.pk === 'meal' ? 'Напоминание о еде' : s.pk === 'nudge' ? 'Новая поддержка' : 'Напоминание о тренировке'), body: planSheet(s), foot: '<button class="btn" data-a="wPlanSave">Сохранить</button>' + (s.id ? '<button class="btn2 warn" data-a="wPlanDel">Удалить</button>' : '') };
       case 'w-plans': return { title: s.pk === 'meal' ? 'Напоминания о еде' : 'Напоминания о тренировках', body: plansSheet(s), foot: '<button class="btn" data-a="wPlanNew" data-v="' + s.pk + '">' + I('plus') + 'Добавить напоминание</button>' };
+      case 'w-sos': return { title: 'SOS: мне тяжело держаться', body: sosSheet(s), foot: '' };
       case 'w-lab': return { title: s.id ? 'Анализы' : 'Новые анализы', body: labSheet(s), foot: '<button class="btn" data-a="wLabSave">Сохранить</button>' + (s.id ? '<button class="btn2 warn" data-a="wLabDel">Удалить</button>' : '') };
       case 'w-trend': return { title: (trendData(s.key) || {}).name || 'Показатель', body: trendSheet(s), foot: '' };
       case 'w-prof': return { title: 'Профиль для норм', body: '<div class="muted" style="line-height:1.5">Нормы витаминов и минералов зависят от пола и возраста. Данные остаются в вашем аккаунте.</div>' + section('Пол', chipSet('sex', [['m', 'Мужской'], ['f', 'Женский']], s.sex)) + numField('age', 'Возраст, лет', s.age), foot: '<button class="btn" data-a="wProfSave">Сохранить</button>' };
@@ -463,10 +464,34 @@
   }
 
   /* --- расписания (привычки + смысл) --- */
-  var KICON = { med: 'pill', meal: 'coffee', workout: 'dumb' }, KCOLOR = { med: 3, meal: 1, workout: 2 };
-  var TPRE = { med: ['08:00', '13:00', '20:00', '22:00'], meal: ['08:00', '13:00', '19:00'], workout: ['07:00', '18:00', '19:00'] };
+  var KICON = { med: 'pill', meal: 'coffee', workout: 'dumb', nudge: 'star' }, KCOLOR = { med: 3, meal: 1, workout: 2, nudge: 4 };
+  /* --- поддержка: заготовки на типичные трудные моменты (фразы можно править и дополнять ИИ) --- */
+  var TOPICS = [['food', 'Еда'], ['fit', 'Тренировки'], ['tasks', 'Дела и лень'], ['sleep', 'Сон'], ['other', 'Другое']];
+  var PRESETS = {
+    food: [
+      { n: 'Хочется есть до обеда', title: 'Дотерпи до обеда', at: '11:00', msgs: ['Тяга к еде приходит волной и обычно проходит за 10 минут. Выпей воды и подожди.', 'Ты уже рассчитал(а) свой обед. Он скоро, не меняй его на случайный перекус.', 'Если очень хочется есть, сначала стакан воды или белковый перекус по плану. Потом решай.', 'Ты начинал(а) это ради цели. Один спокойный час сейчас дороже случайного перекуса.', 'Голод и скука похожи. Займи руки на 10 минут, а потом проверь, правда ли хочешь есть.', 'Ты уже держался(ась) столько часов. Дотяни до плана, и вечером будет чем гордиться.', 'Не нужно идеально. Нужно просто не брать первое, что попалось. Подожди 10 минут.'] },
+      { n: 'Лень готовить', title: 'Приготовь по плану', at: '17:30', msgs: ['Начни с самого малого: достань продукты на 2 минуты. Дальше проще.', 'Готовка по плану занимает меньше времени, чем ты думаешь. Включи музыку и начни.', 'Лень это нормально. Решение принимает действие: поставь воду или разогрей сковороду.', 'Если сегодня нет сил, возьми самый простой вариант из твоего плана, а не фастфуд.', 'Один пропущенный день не ломает неделю. Но сегодняшний ужин по плану её укрепит.', 'Через час ты скажешь себе спасибо за приготовленную еду. Сделай это для себя.', 'Правило двух минут: начни и разрешай себе остановиться. Обычно останавливаться не хочется.'] },
+      { n: 'Вечерняя тяга к сладкому', title: 'Сладкое подождёт', at: '20:30', msgs: ['Вечерняя тяга чаще про усталость, чем про голод. Чай, вода или душ подождут 10 минут.', 'Если хочется сладкого, выбери порцию в тарелку, а не из пачки. Так ты решаешь сам(а).', 'Ты хорошо шёл(шла) весь день. Не отдавай вечер случайному перекусу.', 'Подожди 10 минут и спроси себя: я голоден(на) или просто устал(а)?', 'Один съеденный кусок это не срыв. Срыв это решить, что день потерян. Продолжай по плану.', 'Что-нибудь из плана по белку и тёплый чай часто снимают тягу.', 'Завтра утром тебе понравится, что ты удержался(ась) сегодня.'] },
+      { n: 'После срыва', title: 'Срыв не конец', at: '09:00', msgs: ['Вчера было, сегодня новый день. Главное не пропустить дважды: следующий приём пищи по плану.', 'Один срыв не ломает неделю. Не наказывай себя, просто вернись к плану на ближайшем приёме.', 'Без самокритики: что подтолкнуло вчера? Подготовь на сегодня маленькое решение для этого момента.', 'Режим держится на возвращении, а не на безупречности. Возвращайся прямо сейчас.', 'Не нужно «отрабатывать» и голодать. Просто обычный завтрак по плану.', 'Ты уже знаешь, как это работает. Один хороший приём пищи, и ты снова в потоке.', 'Хороший день начинается с первого шага по плану. Сделай его.'] }
+    ],
+    fit: [
+      { n: 'Лень на тренировку', title: 'Тренировка сегодня', at: '17:30', msgs: ['Надень форму и дойди до зала. Остальное решишь уже там. Обычно начинать сложнее всего.', 'Даже короткая тренировка лучше пропуска. Разрешаю себе только разминку.', 'Ты не обязан(а) быть в форме, чтобы начать. Достаточно начать, чтобы быть в форме.', 'Через час ты будешь рад(а), что сходил(а). Запомни это чувство.', 'Пропуск одной тренировки не страшен, но не пропускай дважды подряд.', 'Сделай хотя бы первое упражнение. Дальше пойдёт.', 'Твои веса растут только от тех тренировок, на которые ты вышел(ла) через «не хочу».'] }
+    ],
+    tasks: [
+      { n: 'Не могу начать дела', title: 'Маленький шаг', at: '10:00', msgs: ['Выбери одну задачу и работай над ней всего 2 минуты. Потом можно остановиться.', 'Не нужно делать всё. Сделай самое неприятное дело первым, остальное станет легче.', 'Таймер на 15 минут и одно дело. Потом решишь, продолжать или нет.', 'Начало самое тяжёлое, а потом идёт само. Открой задачу прямо сейчас.', 'Идеальный момент не придёт. Сделай неидеально, но начни.', 'Разбей задачу на шаг на 5 минут и сделай только его.', 'Ты уже делал(а) такое. Вспомни, как приятно ставить галочку.'] }
+    ],
+    sleep: [
+      { n: 'Пора ложиться', title: 'Пора готовиться ко сну', at: '22:30', msgs: ['Отложи телефон и приглушите свет. Завтра будет легче, если ляжешь сейчас.', 'Сон это тоже часть тренировки и питания. Дай телу восстановиться.', 'Ещё одна серия подождёт. Сейчас лучшая инвестиция это сон.', 'Поставь зарядку и ложись. Утром ты скажешь себе спасибо.', 'Режим держится на одинаковом времени сна. Сегодня тоже ложись вовремя.', 'Вечерний ритуал: вода, душ, свет вниз. Начни с первого шага.', 'Лучше недосмотреть, чем недоспать. Выключай экран.'] }
+    ],
+    other: [
+      { n: 'Просто поддержка', title: 'Ты справляешься', at: '12:00', msgs: ['Ты уже на правильном пути. Следующий шаг маленький, и он по силам.', 'Не нужно идеально. Нужно регулярно. Сделай следующее, что запланировал(а).', 'Помни, зачем ты начал(а). Это стоит усилий.', 'Прогресс идёт даже в дни, когда его не видно.', 'Сделай паузу, вдохни и вернись к плану. Всё остальное подождёт.', 'Ты уже сделал(а) больше, чем кажется. Продолжай.', 'Один день не определяет результат, определяет привычка возвращаться.'] }
+    ]
+  };
+  var TOPICN = {}; TOPICS.forEach(function (t) { TOPICN[t[0]] = t[1]; });
+  var TPRE = { med: ['08:00', '13:00', '20:00', '22:00'], meal: ['08:00', '13:00', '19:00'], workout: ['07:00', '18:00', '19:00'], nudge: ['10:00', '11:00', '15:00', '17:30', '20:30', '22:30'] };
   function planSheet(s) {
     var pk = s.pk, h = '';
+    if (pk === 'nudge') return nudgeSheet(s);
     if (pk === 'med') {
       var items = W.cabinet.slice().sort(function (a, b) { return a.name < b.name ? -1 : 1; });
       if (items.length) h += section('Препарат из аптечки', '<div class="chips">' + items.slice(0, 24).map(function (c) { return '<button type="button" class="chip' + (s.item_id === c.id ? ' on' : '') + '" data-a="wPlanItem" data-v="' + c.id + '">' + esc(c.name) + '</button>'; }).join('') + '</div>');
@@ -488,11 +513,25 @@
     h += '<label><div class="gl">Начало</div><input class="fld" type="date" data-f="start" value="' + esc(s.start) + '"></label>';
     return h;
   }
+  function nudgeSheet(s) {
+    var h = section('Сфера', '<div class="chips">' + TOPICS.map(function (t) { return '<button type="button" class="chip' + (s.topic === t[0] ? ' on' : '') + '" data-a="wNudgeTopic" data-v="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div>');
+    h += section('Готовая заготовка', '<div class="chips">' + (PRESETS[s.topic] || []).map(function (p, i) { return '<button type="button" class="chip" data-a="wNudgePreset" data-v="' + i + '">' + esc(p.n) + '</button>'; }).join('') + '</div><div class="muted" style="font-size:13px;margin-top:6px;line-height:1.45">Заготовка подставит название, время и фразы. Всё можно изменить.</div>');
+    h += field('title', 'Заголовок уведомления', s.title, 'autocomplete="off" placeholder="Например, Дотерпи до обеда"');
+    h += '<label><div class="gl">Фразы (каждая с новой строки, чередуются по дням)</div><textarea class="fld" rows="6" data-f="msgs" placeholder="Тяга к еде проходит за 10 минут. Выпей воды и подожди.">' + esc(s.msgs || '') + '</textarea></label>';
+    h += '<div class="row2" style="margin-top:8px"><button type="button" class="btn2" data-a="wNudgeAI"' + (s._ai ? ' disabled' : '') + '>' + I('spark') + (s._ai ? 'Придумываю…' : 'Придумать фразы с ИИ') + '</button></div>';
+    if (s._err) h += '<div class="muted" style="color:var(--warn);margin-top:6px">' + esc(s._err) + '</div>';
+    var tms = (s.times || []).slice().sort(), pre = TPRE.nudge;
+    h += section('Напоминать в', '<div class="chips">' + pre.concat(tms.filter(function (x) { return pre.indexOf(x) < 0; })).sort().map(function (x) { var on = tms.indexOf(x) >= 0; return '<button type="button" class="chip' + (on ? ' on' : '') + '" data-a="wTimeTog" data-v="' + x + '" aria-pressed="' + on + '">' + x + '</button>'; }).join('') + '</div>' +
+      '<div class="hadd-form" style="margin-top:10px"><input class="fld" type="time" data-f="t_add" value="' + esc(s.t_add || '') + '" aria-label="Своё время"><button type="button" class="btn2" data-a="wTimeAdd" style="flex:0 0 auto">' + I('plus') + 'Своё время</button></div>');
+    h += section('Дни', chipSet('dmode', [['all', 'Каждый день'], ['wk', 'По будням'], ['pick', 'Выбрать']], s.dmode) +
+      (s.dmode === 'pick' ? '<div class="chips" style="margin-top:8px">' + WD.map(function (d, i) { var on = s.days.indexOf(i) >= 0; return '<button type="button" class="chip' + (on ? ' on' : '') + '" data-a="wDay" data-v="' + i + '">' + d + '</button>'; }).join('') + '</div>' : ''));
+    return h;
+  }
   function planOpen(pk, p, preset) {
-    var base = { type: 'w-plan', pk: pk, id: null, item_id: null, title: pk === 'workout' ? 'Тренировка' : '', units: '1', course: '', times: [], dmode: 'all', days: [], nag: '0', start: T(), t_add: '' };
+    var base = { type: 'w-plan', pk: pk, topic: 'food', msgs: '', id: null, item_id: null, title: pk === 'workout' ? 'Тренировка' : '', units: '1', course: '', times: [], dmode: 'all', days: [], nag: '0', start: T(), t_add: '' };
     if (p) {
       var hb = habitOf(p), ds = (hb && hb.days) || [];
-      base = Object.assign(base, { id: p.id, item_id: p.item_id, title: p.title, units: r1(p.units), start: p.start_day, course: p.end_day ? String(diff(p.end_day, p.start_day) + 1) : '', times: hb ? timesOf(hb) : [], dmode: !ds.length ? 'all' : (ds.length === 5 && ds.indexOf(5) < 0 && ds.indexOf(6) < 0) ? 'wk' : 'pick', days: ds.slice(), nag: String((hb && hb.remind_every) || 0) });
+      base = Object.assign(base, { id: p.id, topic: p.topic || 'food', msgs: (p.msgs || []).join('\n'), item_id: p.item_id, title: p.title, units: r1(p.units), start: p.start_day, course: p.end_day ? String(diff(p.end_day, p.start_day) + 1) : '', times: hb ? timesOf(hb) : [], dmode: !ds.length ? 'all' : (ds.length === 5 && ds.indexOf(5) < 0 && ds.indexOf(6) < 0) ? 'wk' : 'pick', days: ds.slice(), nag: String((hb && hb.remind_every) || 0) });
     }
     if (preset) Object.assign(base, preset);
     UI.sheet = base; renderSheet(true);
@@ -506,23 +545,25 @@
     if (btn) btn.disabled = true;
     var units = num(s.units) > 0 ? num(s.units) : 1, it = cabById(s.item_id);
     var name = s.pk === 'med' ? title + ' · ' + r1(units) + ' ' + unitOf(it) : title;
+    var msgs = s.pk === 'nudge' ? String(s.msgs || '').split(/\r?\n/).map(function (x) { return x.trim(); }).filter(Boolean).slice(0, 30) : [];
+    if (s.pk === 'nudge' && !msgs.length) { if (btn) btn.disabled = false; toast('Добавьте хотя бы одну фразу или возьмите заготовку'); return; }
     var days = s.dmode === 'all' ? [] : s.dmode === 'wk' ? [0, 1, 2, 3, 4] : s.days.slice().sort();
     var start = s.start || T(), course = num(s.course), end = s.pk === 'med' && course > 0 ? addDays(start, Math.round(course) - 1) : null;
-    var hf = { name: name, icon: KICON[s.pk], color: COLORS[KCOLOR[s.pk]] || COLORS[0], target: tms.length, days: days, remind: tms[0], remind_at: tms.slice(1), remind_every: +s.nag || 0, started_on: start, paused: false, finished: !!(end && end < T()) };
+    var hf = { name: name, icon: KICON[s.pk], color: COLORS[KCOLOR[s.pk]] || COLORS[0], target: tms.length, days: days, remind: tms[0], remind_at: tms.slice(1), remind_every: s.pk === 'nudge' ? 0 : (+s.nag || 0), started_on: start, paused: false, finished: !!(end && end < T()) };
     try {
       var pl;
       if (s.id) {
         pl = planById(s.id); var hb = habitOf(pl);
         if (hb) { var hr = await q(sb.from('habits').update(hf).eq('id', hb.id).select().single()); Object.assign(hb, hr); }
-        var pr = await q(sb.from('h_plans').update({ title: title, units: units, item_id: s.item_id || null, start_day: start, end_day: end }).eq('id', s.id).select().single());
+        var pr = await q(sb.from('h_plans').update({ title: title, units: units, item_id: s.item_id || null, start_day: start, end_day: end, msgs: msgs, topic: s.pk === 'nudge' ? s.topic : '' }).eq('id', s.id).select().single());
         Object.assign(pl, pr);
       } else {
         var hrow = await q(sb.from('habits').insert(hf).select().single());
         W.habits.push(hrow);
-        var prow = await q(sb.from('h_plans').insert({ owner: X.ME, kind: s.pk, item_id: s.item_id || null, title: title, units: units, habit_id: hrow.id, start_day: start, end_day: end }).select().single());
+        var prow = await q(sb.from('h_plans').insert({ owner: X.ME, kind: s.pk, item_id: s.item_id || null, title: title, units: units, habit_id: hrow.id, start_day: start, end_day: end, msgs: msgs, topic: s.pk === 'nudge' ? s.topic : '' }).select().single());
         W.plans.push(prow);
       }
-      closeSheet(); render(); toast(s.pk === 'med' ? 'Расписание сохранено, напоминания включены' : 'Напоминание сохранено');
+      closeSheet(); render(); toast(s.pk === 'med' ? 'Расписание сохранено, напоминания включены' : s.pk === 'nudge' ? 'Поддержка включена: напоминания придут в выбранное время' : 'Напоминание сохранено');
     } catch (e) { if (btn) btn.disabled = false; err(e); }
   }
   async function delPlan(id) {
@@ -658,6 +699,67 @@
     return h;
   }
 
+  /* =================== ПОДДЕРЖКА (отдельный раздел, не только про еду) =================== */
+  function nudgePlans() { return W.plans.filter(function (p) { return p.kind === 'nudge'; }); }
+  function supportView() {
+    var h = '<div class="top"><div><div class="date">' + X.fmtLong(T()) + '</div><h1 class="dh">Поддержка</h1></div><button class="btn2" data-a="wPlanNew" data-v="nudge">' + I('plus') + 'Добавить</button></div>';
+    if (!W.ok) return h + (W.error ? '<div class="empty">Раздел пока не подключён к базе.<br>' + esc(W.error) + '</div>' : '<div class="empty">Загружаю…</div>');
+    h += '<div class="muted" style="line-height:1.5;margin-top:8px">Короткие напоминания, которые придут в самый трудный момент: когда хочется сорваться с питания, лень готовить или тренироваться, не получается взяться за дела или лечь вовремя.</div>';
+    h += '<button class="btn" style="width:100%;margin-top:14px" data-a="wSos">' + I('heart') + 'SOS: мне прямо сейчас тяжело</button>';
+    var list = nudgePlans();
+    if (!list.length) {
+      h += '<div class="dday">Быстрый старт</div><div class="chips">' + [['food', 0], ['food', 1], ['fit', 0], ['tasks', 0], ['sleep', 0]].map(function (x) { return '<button class="chip" data-a="wNudgeQuick" data-v="' + x[0] + ':' + x[1] + '">' + esc(PRESETS[x[0]][x[1]].n) + '</button>'; }).join('') + '</div><div class="muted" style="margin-top:8px;font-size:13px;line-height:1.45">Нажмите заготовку, проверьте фразы и время, сохраните. Всё можно изменить.</div>';
+    } else {
+      TOPICS.forEach(function (t) {
+        var ps = list.filter(function (p) { return (p.topic || 'other') === t[0] || (t[0] === 'other' && !TOPICN[p.topic]); });
+        if (!ps.length) return;
+        h += '<div class="dday">' + t[1] + '</div><div class="fields">' + ps.map(function (p) {
+          return '<button class="lrow" data-a="wPlanOpen" data-id="' + p.id + '">' + I('bell') + '<b>' + esc(p.title) + '<br><small class="muted" style="font-weight:400">' + esc(planWhen(p)) + ' · ' + (p.msgs || []).length + ' фраз</small></b>' + I('right') + '</button>';
+        }).join('') + '</div>';
+      });
+      h += '<div class="dday">Ещё</div><div class="chips">' + [['food', 0], ['food', 1], ['food', 2], ['food', 3], ['fit', 0], ['tasks', 0], ['sleep', 0]].map(function (x) { return '<button class="chip" data-a="wNudgeQuick" data-v="' + x[0] + ':' + x[1] + '">' + I('plus') + esc(PRESETS[x[0]][x[1]].n) + '</button>'; }).join('') + '</div>';
+    }
+    return h + '<div class="wdisc">Это не медицинская помощь. Если срывы случаются часто и вызывают сильную тревогу или вину, обсудите это со специалистом.</div>';
+  }
+  var SOS = [
+    ['food', 'Тянет на вредное или лишнюю еду', ['Выпей стакан воды и поставь таймер на 10 минут: тяга приходит волной и обычно спадает.', 'Съешь то, что в плане: белковый перекус или ближайший приём пищи.', 'Если всё же ешь, положи порцию в тарелку и ешь сидя, без экрана.']],
+    ['cook', 'Лень готовить', ['Сделай только первый шаг: достань продукты и поставь воду или сковороду. Это 2 минуты.', 'Выбери самый простой вариант из своего плана, а не доставку.', 'Начни и разреши себе остановиться через 5 минут. Обычно остановиться уже не хочется.']],
+    ['fit', 'Лень тренироваться', ['Оденься в форму и выйди из дома. Решишь по дороге.', 'Договорись с собой на 10 минут: разминка и одно упражнение.', 'Короткая тренировка лучше пропуска. Главное не пропустить дважды подряд.']],
+    ['tasks', 'Не могу взяться за дела', ['Выбери одну задачу и поставь таймер на 15 минут.', 'Разбей её на шаг на 5 минут и сделай только его.', 'Начни с самого неприятного, остальное станет легче.']],
+    ['slip', 'Был срыв', ['Один срыв не ломает неделю. Не наказывай себя голодом и не «отрабатывай».', 'Следующий приём пищи по плану: возвращайся сразу, не с понедельника.', 'Запиши, что подтолкнуло, и подготовь заранее маленькое решение на этот момент.']]
+  ];
+  function sosSheet(s) {
+    var h = '<div class="muted" style="line-height:1.5">Выберите, что сейчас происходит. Дам короткий план на ближайшие минуты.</div>' + section('Что происходит', '<div class="chips">' + SOS.map(function (x) { return '<button type="button" class="chip' + (s.sos === x[0] ? ' on' : '') + '" data-a="wSosPick" data-v="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>');
+    var cur = SOS.filter(function (x) { return x[0] === s.sos; })[0];
+    if (!cur) return h;
+    h += '<div class="fields" style="margin-top:12px">' + cur[2].map(function (t, i) { return '<div class="fr"><b style="font-weight:600">' + (i + 1) + '</b><span style="line-height:1.45">' + esc(t) + '</span></div>'; }).join('') + '</div>';
+    var tp = { food: 'food', cook: 'food', fit: 'fit', tasks: 'tasks', slip: 'food' }[cur[0]], pool = [];
+    nudgePlans().forEach(function (p) { if (p.topic === tp) pool = pool.concat(p.msgs || []); });
+    if (!pool.length) pool = (PRESETS[tp] || PRESETS.other)[0].msgs;
+    h += '<div class="wdisc" style="font-style:normal;margin-top:12px">' + esc(pool[Math.floor(Math.random() * pool.length)]) + '</div>';
+    var H = window.HEALTH && HEALTH.u, nm = null;
+    if ((cur[0] === 'food' || cur[0] === 'cook' || cur[0] === 'slip') && H && H.meals) {
+      try { var now = X.nowHM(); nm = H.meals().filter(function (m) { return m.day === T() && m.planned && !H.isDone(m) && (m.at || '99') >= now.slice(0, 5); }).sort(function (a, b) { return (a.at || '') < (b.at || '') ? -1 : 1; })[0]; } catch (e) { nm = null; }
+    }
+    if (nm) h += '<div class="muted" style="margin-top:10px;line-height:1.5">Ближайший приём по плану: <b>' + esc(nm.title) + '</b>' + (nm.at ? ' в ' + esc(String(nm.at).slice(0, 5)) : '') + (nm.kcal ? ', ' + Math.round(nm.kcal) + ' ккал' : '') + '.</div>';
+    h += '<div class="row2" style="margin-top:14px"><button class="btn2" data-a="wSosTimer">' + I('clock') + 'Таймер на 10 минут</button><button class="btn2" data-a="wSosDone">Справился(ась)</button></div>';
+    return h;
+  }
+  async function nudgeAI(btn) {
+    var s = UI.sheet; if (!s || s._ai) return;
+    var S = X.SET, ctx = [];
+    if (+S.kcalGoal) ctx.push('Цель: ' + S.kcalGoal + ' ккал' + (+S.proteinGoal ? ', белки ' + S.proteinGoal + ' г' : '') + (+S.fatGoal ? ', жиры ' + S.fatGoal + ' г' : '') + (+S.carbsGoal ? ', углеводы ' + S.carbsGoal + ' г' : ''));
+    try { var H = HEALTH.u; var pm = H.meals().filter(function (m) { return m.day === T() && m.planned; }).slice(0, 5); if (pm.length) ctx.push('Запланировано сегодня: ' + pm.map(function (m) { return (m.at ? String(m.at).slice(0, 5) + ' ' : '') + m.title; }).join('; ')); } catch (e) {}
+    var trig = (s.title || '').trim() + ((s.msgs || '').trim() ? '. Примеры моих фраз: ' + String(s.msgs).split(/\r?\n/).slice(0, 3).join(' / ') : '');
+    s._ai = true; s._err = ''; renderSheet();
+    try {
+      var r = await HEALTH.u.callAI({ mode: 'nudge', text: trig || (PRESETS[s.topic] || PRESETS.other)[0].n, topic: TOPICN[s.topic] || '', context: ctx.join('\n') });
+      if (UI.sheet !== s) return;
+      var ms = (r.messages || []).map(function (x) { return String(x).trim(); }).filter(Boolean);
+      if (ms.length) s.msgs = ms.join('\n'); else s._err = 'ИИ не вернул фраз, попробуйте ещё раз';
+    } catch (e) { s._err = e.message || 'Не получилось'; }
+    s._ai = false; if (UI.sheet === s) renderSheet();
+  }
   /* =================== ПОМОЩНИК: записи по фото и словам =================== */
   var OWN = { cabinet: 1, intake: 1, lab: 1 };
   function asEntries(a, withPh) {
@@ -742,6 +844,17 @@
       await setMark(h, T(), c - 1); await adjustStock(cabById(p.item_id), +(+p.units || 1));
     },
     /* расписания */
+    wNudgeTopic: function (v) { if (UI.sheet) { UI.sheet.topic = v; renderSheet(); } },
+    wNudgePreset: function (v) { var s = UI.sheet, p = (PRESETS[s.topic] || [])[+v]; if (!p) return; s.title = p.title; s.msgs = p.msgs.join('\n'); if (!(s.times || []).length) s.times = [p.at]; renderSheet(); },
+    wNudgeAI: function () { nudgeAI(); },
+    wNudgeQuick: function (v) { var a = String(v).split(':'), p = PRESETS[a[0]][+a[1]]; planOpen('nudge', null, { topic: a[0], title: p.title, msgs: p.msgs.join('\n'), times: [p.at] }); },
+    wSos: function () { UI.sheet = { type: 'w-sos', sos: '' }; renderSheet(true); },
+    wSosPick: function (v) { UI.sheet.sos = v; renderSheet(); },
+    wSosDone: function () { closeSheet(); toast('Молодец. Продолжай по плану'); },
+    wSosTimer: async function () {
+      var d = new Date(Date.now() + 10 * 60000), hm = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2), day = X.T();
+      try { await X.createTask({ title: 'Прошло 10 минут: как ты? Тяга обычно уже слабее', due_date: d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2), due_time: hm, remind_every: 0, remind_times: 0 }); closeSheet(); toast('Напомню через 10 минут'); } catch (e) { err(e); }
+    },
     wPlanNew: function (v) { if (UI.sheet) closeSheet(); planOpen(v || 'med', null); },
     wPlanOpen: function (v, id) { var p = planById(id); if (p) planOpen(p.kind, p); },
     wPlanFromItem: function () { var s = UI.sheet; if (!s || !s.id) return; var c = cabById(s.id); closeSheet(); planOpen('med', null, { item_id: c.id, title: c.name + (c.dosage ? ' ' + c.dosage : '') }); },
@@ -780,7 +893,7 @@
   Object.assign(A, actions);
 
   window.WELL = {
-    load: load, view: view, sheet: sheet, habits: function () { return W.habits; }, plans: function () { return W.plans; }, nutMeta: nutMeta, summaryText: summaryText,
+    load: load, view: view, supportView: supportView, sheet: sheet, habits: function () { return W.habits; }, plans: function () { return W.plans; }, nutMeta: nutMeta, summaryText: summaryText,
     owns: function (t) { return !!OWN[t]; }, asEntries: asEntries, entryInfo: entryInfo, entryText: entryText, addFrom: addFrom
   };
   /* если основное приложение уже успело загрузиться раньше этого файла — догружаем данные раздела */
