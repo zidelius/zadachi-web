@@ -462,3 +462,34 @@ body.pc .tabs.dragging,body.pc .chipsrow.dragging,body.pc .habits.dragging{curso
 html,body{overflow-x:hidden}
 
 .calnav .btn2[disabled]{opacity:.45;cursor:default}
+
+/* ===== единый визуальный стиль: аккуратные кнопки, подписи и строки на любом экране ===== */
+.btn,.btn2{height:auto;min-height:46px;padding:10px 18px;line-height:1.25;text-align:center;white-space:normal;letter-spacing:.005em}
+.btn2{min-height:44px;padding:9px 16px}
+.btn svg.i,.btn2 svg.i,.chip svg.i{flex-shrink:0}
+.top .btn2,.top .btn{white-space:nowrap;flex-shrink:0}
+.chip{height:auto;min-height:38px;padding:7px 15px;line-height:1.25;white-space:normal;text-align:center;justify-content:center}
+.pills button{white-space:nowrap}
+.fields{overflow:hidden}
+.fields .fr{min-height:48px;padding:8px 16px;line-height:1.35}
+.fields .fr b{text-align:right;min-width:0;overflow-wrap:anywhere;font-weight:500}
+.fields .fr span{min-width:0}
+.lrow{padding:10px 16px;text-align:left;line-height:1.35}
+.lrow b{min-width:0;overflow-wrap:anywhere;text-align:left}
+.tt{overflow-wrap:break-word;word-break:normal;hyphens:auto}
+.gl{letter-spacing:.02em}
+.gh{line-height:1.45}
+.dday{font-size:clamp(22px,6.4vw,28px);margin:26px 0 6px;letter-spacing:.02em}
+.sum{padding:14px 16px;line-height:1.4}
+.empty{padding:32px 16px}
+/* привычки: название на всю ширину, кружки дней ниже, если не помещаются */
+.habrow{flex-wrap:wrap;align-items:center;row-gap:10px}
+.habrow>.tb{flex:1 1 210px;min-width:0}
+.habrow .tt{align-items:center}
+.habdays{display:flex;gap:6px;margin-left:auto;flex-shrink:0}
+@media (max-width:420px){.habdays{width:100%;justify-content:space-between;margin-left:0}}
+.top{align-items:flex-end;row-gap:10px}
+.top>div:first-child{min-width:0}
+.tbtns{display:flex;gap:8px;align-items:center;margin-left:auto}
+@media (max-width:420px){.top .btn2,.top .btn{min-height:40px;padding:7px 13px;font-size:14px}.top .hbell{padding:7px 11px}.tbtns{gap:6px}}
+.dh{font-size:clamp(26px,7.4vw,40px)}

@@ -1,4 +1,4 @@
-﻿/* Нативные уведомления для Android-обёртки (Capacitor). В браузере и PWA модуль ничего не делает. */
+/* Нативные уведомления для Android-обёртки (Capacitor). В браузере и PWA модуль ничего не делает. */
 (function () {
   var C = window.Capacitor;
   if (!C || !C.isNativePlatform || !C.isNativePlatform()) return;
@@ -86,25 +86,40 @@
       var pend = await LN.getPending();
       if (pend && pend.notifications && pend.notifications.length) await LN.cancel({ notifications: pend.notifications.map(function (n) { return { id: n.id }; }) });
       if (list.length) await LN.schedule({ notifications: list });
-      lastSig = sig;
-    } catch (e) { console.warn('native notifications', e); } finally { busy = false; }
+      lastSig = sig; ST.notif = 'ок, запланировано: ' + list.length;
+    } catch (e) { ST.notif = 'ошибка: ' + (e && e.message || e); console.warn('native notifications', e); } finally { busy = false; }
   }
 
+  /* состояние нативной части: показывается в Настройках, чтобы было видно, что работает */
+  var ST = window.NATIVE = { widget: '…', notif: '…', back: '…', perm: '…', refresh: function () { wSig = ''; return widgetSync(); } };
+  function tmo(p, ms, name) { return Promise.race([p, new Promise(function (_, rej) { setTimeout(function () { rej(new Error(name + ': нет ответа')); }, ms); })]); }
+  async function widgetSync2() {
+    if (!WB) { ST.widget = 'плагин виджета не найден'; return; }
+    if (!X.ME || !X.D.profiles.length) return;
+    try { var j = JSON.stringify(widgetData()); if (j === wSig) return; await tmo(WB.update({ json: j }), 8000, 'виджет'); wSig = j; ST.widget = 'ок, дел: ' + JSON.parse(j).items.length; }
+    catch (e) { ST.widget = 'ошибка: ' + (e && e.message || e); }
+  }
+  widgetSync = widgetSync2;
+
+  /* жест «назад» (с края экрана) и системная кнопка: окно -> панель -> предыдущий экран -> свернуть */
+  var hist = [], skipHist = false, go0 = X.A.go;
+  X.A.go = function (v) { var prev = X.UI.view, r = go0.apply(this, arguments); if (!skipHist && X.UI.view !== prev) { hist.push(prev); if (hist.length > 30) hist.shift(); } return r; };
+  X.A.nativeRefresh = async function () { await ST.refresh(); X.toast('Виджет: ' + ST.widget); if (X.UI.sheet) X.renderSheet(); };
+  function setupBack() {
+    var APP = (C.Plugins && C.Plugins.App) || (C.registerPlugin && C.registerPlugin('App'));
+    if (!APP || !APP.addListener) { ST.back = 'плагин App не найден'; return; }
+    APP.addListener('backButton', function () {
+      if (X.UI.sheet) { X.closeSheet(); return; }
+      if (X.UI.sel) { X.UI.sel = null; X.render(); return; }
+      if (hist.length) { var v = hist.pop(); skipHist = true; try { go0.call(X.A, v); } finally { skipHist = false; } return; }
+      if (X.UI.view !== 'tasks') { skipHist = true; try { go0.call(X.A, 'tasks'); } finally { skipHist = false; } return; }
+      if (APP.minimizeApp) APP.minimizeApp(); else if (APP.exitApp) APP.exitApp();
+    });
+    ST.back = 'ок';
+  }
+  try { setupBack(); } catch (e) { ST.back = 'ошибка: ' + (e && e.message || e); }
+
   async function init() {
-    try {
-      var p = await LN.checkPermissions();
-      if (p.display !== 'granted') p = await LN.requestPermissions();
-      try { var ea = await LN.checkExactAlarmPermission(); if (ea && ea.exact_alarm !== 'granted') await LN.changeExactNotificationSetting(); } catch (e) {}
-      /* отдельный канал на каждый раздел: в настройках Android для каждого можно задать свой звук и вибрацию */
-      var CHS = [['tasks', 'Задачи', 'Напоминания о задачах и повторы'], ['habits', 'Привычки', 'Напоминания о привычках'], ['meds', 'Лекарства и БАДы', 'Время приёма'], ['meals', 'Питание', 'Приёмы пищи по плану'], ['workouts', 'Тренировки', 'Время тренировки'], ['support', 'Поддержка', 'Мотивационные напоминания']];
-      try { await LN.deleteChannel({ id: 'zadachi' }); } catch (e) {}
-      for (var ci = 0; ci < CHS.length; ci++) { try { await LN.createChannel({ id: CHS[ci][0], name: CHS[ci][1], description: CHS[ci][2], importance: CHS[ci][0] === 'support' ? 4 : 5, visibility: 1, vibration: true, lights: true }); } catch (e) {} }
-      await LN.registerActionTypes({ types: [
-        { id: 'TASK', actions: [{ id: 'done', title: 'Выполнено' }, { id: 'snooze', title: '+10 мин' }] },
-        { id: 'HABIT', actions: [{ id: 'done', title: 'Отметить' }, { id: 'snooze', title: '+10 мин' }] },
-        { id: 'NUDGE', actions: [{ id: 'done', title: 'Справился(ась)' }, { id: 'snooze', title: '+10 мин' }] },
-        { id: 'MED', actions: [{ id: 'done', title: 'Принял(а)' }, { id: 'snooze', title: '+10 мин' }] }] });
-    } catch (e) { console.warn(e); }
     LN.addListener('localNotificationActionPerformed', async function (ev) {
       var ex = ev.notification && ev.notification.extra || {}, act = ev.actionId;
       for (var w = 0; w < 60 && !(X.ME && X.D.profiles.length); w++) await new Promise(function (r) { setTimeout(r, 500); });
@@ -118,9 +133,23 @@
         }
       } catch (e) { console.warn(e); }
     });
+    /* каждый шаг со своим таймаутом: один зависший вызов не должен останавливать остальное */
+    var CHS = [['tasks', 'Задачи', 'Напоминания о задачах и повторы'], ['habits', 'Привычки', 'Напоминания о привычках'], ['meds', 'Лекарства и БАДы', 'Время приёма'], ['meals', 'Питание', 'Приёмы пищи по плану'], ['workouts', 'Тренировки', 'Время тренировки'], ['support', 'Поддержка', 'Мотивационные напоминания']];
+    try { try { await tmo(LN.deleteChannel({ id: 'zadachi' }), 5000, 'канал'); } catch (e) {}
+      for (var ci = 0; ci < CHS.length; ci++) { try { await tmo(LN.createChannel({ id: CHS[ci][0], name: CHS[ci][1], description: CHS[ci][2], importance: CHS[ci][0] === 'support' ? 4 : 5, visibility: 1, vibration: true, lights: true }), 5000, 'канал'); } catch (e) {} } } catch (e) {}
+    try { await tmo(LN.registerActionTypes({ types: [
+        { id: 'TASK', actions: [{ id: 'done', title: 'Выполнено' }, { id: 'snooze', title: '+10 мин' }] },
+        { id: 'HABIT', actions: [{ id: 'done', title: 'Отметить' }, { id: 'snooze', title: '+10 мин' }] },
+        { id: 'NUDGE', actions: [{ id: 'done', title: 'Справился(ась)' }, { id: 'snooze', title: '+10 мин' }] },
+        { id: 'MED', actions: [{ id: 'done', title: 'Принял(а)' }, { id: 'snooze', title: '+10 мин' }] }] }), 5000, 'кнопки'); } catch (e) { ST.notif = 'ошибка кнопок: ' + e.message; }
+    try { var p = await tmo(LN.checkPermissions(), 5000, 'разрешения'); ST.perm = p.display; if (p.display !== 'granted') { p = await tmo(LN.requestPermissions(), 60000, 'запрос'); ST.perm = p.display; } } catch (e) { ST.perm = 'ошибка: ' + e.message; }
     sync(true);
+    try { var ea = await tmo(LN.checkExactAlarmPermission(), 5000, 'будильники'); if (ea && ea.exact_alarm !== 'granted') { ST.notif = 'нужно разрешение «Будильники и напоминания»'; await LN.changeExactNotificationSetting(); } } catch (e) {}
     setInterval(function () { sync(false); }, 15000);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) sync(true); });
   }
+  /* виджет обновляем независимо от уведомлений */
+  setInterval(function () { widgetSync(); }, 5000);
+  setTimeout(function () { widgetSync(); }, 1500);
   init();
 })();

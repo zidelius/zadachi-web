@@ -503,8 +503,8 @@ function habitsView(){
   var hs=D.habits.filter(function(x){return !x.finished;});
   if(!hs.length)return h+'<div class="empty">Привычек пока нет. Нажми «Новая».</div>';
   var t=T(),mon=addDays(t,-6);
-  hs.forEach(function(x){h+='<div class="task" style="align-items:center"><button class="tb" data-a="habOpen" data-id="'+x.id+'"><span class="tt" style="display:flex;align-items:center;gap:10px"><span style="color:'+esc(x.color)+'">'+I(x.icon)+'</span>'+esc(x.name)+'</span><span class="meta"><span>'+daysText(x)+'</span><span>'+streak(x)+' '+plural(streak(x),'день','дня','дней')+' подряд</span>'+(x.paused?'<span>на паузе</span>':'')+'</span></button><div style="display:flex;gap:4px">';
-    for(var i=0;i<7;i++){var d=addDays(mon,i),on=hDone(x,d);h+='<button data-a="habDay" data-id="'+x.id+'" data-v="'+d+'" aria-label="'+fmtLong(d)+'" style="width:26px;height:26px;border-radius:50%;'+(on?'background:'+esc(x.color):'border:1.5px '+(sched(x,d)?'solid':'dashed')+' var(--line)')+'"></button>';}
+  hs.forEach(function(x){h+='<div class="task habrow"><button class="tb" data-a="habOpen" data-id="'+x.id+'"><span class="tt" style="display:flex;align-items:center;gap:10px"><span style="color:'+esc(x.color)+'">'+I(x.icon)+'</span>'+esc(x.name)+'</span><span class="meta"><span>'+daysText(x)+'</span><span>'+streak(x)+' '+plural(streak(x),'день','дня','дней')+' подряд</span>'+(x.paused?'<span>на паузе</span>':'')+'</span></button><div class="habdays">';
+    for(var i=0;i<7;i++){var d=addDays(mon,i),on=hDone(x,d);h+='<button data-a="habDay" data-id="'+x.id+'" data-v="'+d+'" aria-label="'+fmtLong(d)+'" style="width:28px;height:28px;border-radius:50%;'+(on?'background:'+esc(x.color):'border:1.5px '+(sched(x,d)?'solid':'dashed')+' var(--line)')+'"></button>';}
     h+='</div></div>';});
   return h;
 }
@@ -848,6 +848,7 @@ function settingsForm(){
   h+='<div><div class="gl">Мои шаблоны</div>'+(D.templates.length?'<div class="chips">'+D.templates.map(function(x){return '<button class="chip" data-a="tplDel" data-id="'+x.id+'">'+esc(x.name)+' '+I('x')+'</button>';}).join('')+'</div>':'<div class="gh" style="margin:0">Создай задачу и нажми «Сохранить настройки как свой шаблон».</div>')+'</div>';
   h+='<div class="row2"><button class="btn2" data-a="lists">'+I('list')+'Управлять списками</button><button class="btn2" data-a="passOpen">'+I('gear')+'Сменить пароль</button></div>';
   if(!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform())&&!isIOS()){h+='<div><div class="gl">Приложение для Android</div><a class="btn2" href="zadachi.apk" download="zadachi.apk" style="text-decoration:none;display:flex;align-items:center;justify-content:center;gap:8px">'+I('inbox')+'Скачать APK</a><div class="gh">Всегда последняя версия. Откройте скачанный файл и разрешите установку из этого источника. Напоминания, виджет на рабочий стол и отдельные звуки по разделам работают только в приложении.'+(window.APKV&&APKV.built?' Сборка от '+esc(APKV.built)+'.':'')+'</div></div>';}
+  if(window.NATIVE){var NS=window.NATIVE;h+='<div><div class="gl">Приложение: состояние</div><div class="fields"><div class="fr"><span>Уведомления</span><b style="font-weight:500">'+esc(NS.notif)+'</b></div><div class="fr"><span>Разрешение</span><b style="font-weight:500">'+esc(NS.perm)+'</b></div><div class="fr"><span>Виджет</span><b style="font-weight:500">'+esc(NS.widget)+'</b></div><div class="fr"><span>Жест «назад»</span><b style="font-weight:500">'+esc(NS.back)+'</b></div></div><button class="btn2" style="margin-top:8px" data-a="nativeRefresh">Обновить виджет</button></div>';}
   h+='<div class="gh">Установить на телефон: в Safari «Поделиться» → «На экран „Домой“», в Chrome меню ⋮ → «Добавить на главный экран».</div>';
   return h;
 }
