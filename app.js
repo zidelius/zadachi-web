@@ -149,7 +149,8 @@ function applyTheme(){
   var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',dark?'#0D0D0C':'#F6F5F1');
   document.body.classList.toggle('pc',isPC());
 }
-function isPC(){return SET.layout==='pc'||(SET.layout==='auto'&&window.innerWidth>=960);}
+function isPC(){return SET.layout==='pc'||(SET.layout==='auto'&&window.innerWidth>=860);}
+function wide(){return isPC()&&window.innerWidth>=1280;}
 if(window.matchMedia)matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(){if(SET.theme==='auto'){applyTheme();}});
 var lastPC=null;window.addEventListener('resize',function(){var p=isPC();if(p!==lastPC){lastPC=p;applyTheme();render();}});
 
@@ -421,6 +422,22 @@ function filterChips(){
   D.lists.forEach(function(l){out+='<button class="fchip'+(UI.filter===l.id?' on':'')+'" data-a="filter" data-v="'+l.id+'"><i class="dot" style="--c:'+esc(l.color)+'"></i>'+esc(l.name)+(l.hidden?' '+I('eyeoff'):'')+(isShared(l)?' '+I('users'):'')+'</button>';});
   return out+'<button class="fchip" data-a="lists">'+I('plus')+'Списки</button></div>';
 }
+function dashTiles(groups,todays,openN){
+  var t=T(),hs=D.habits.filter(function(h){return !h.finished&&!h.paused&&h.started_on<=t&&sched(h,t);}),hd=hs.filter(function(h){return hDone(h,t);}).length;
+  var pc=function(a,b){return b?Math.round(a*100/b):0;};
+  var tile=function(ic,lab,big,sub,pct,warn){return '<div class="tile'+(warn?' warn':'')+'"><div class="tl">'+I(ic)+'<span>'+lab+'</span></div><div class="tv">'+big+'</div><div class="ts">'+sub+'</div>'+(pct!=null?'<div class="bar"><i style="width:'+Math.min(100,pct)+'%"></i></div>':'')+'</div>';};
+  var h='<div class="tiles">';
+  h+=tile('sun','Сегодня',(todays.length-openN)+'<small> из '+todays.length+'</small>',openN?'осталось '+openN+' '+plural(openN,'задача','задачи','задач'):(todays.length?'всё сделано':'задач нет'),pc(todays.length-openN,todays.length));
+  var ov=(groups.overdue||[]).length+todays.filter(function(x){return !x.done&&x.due_date&&x.due_date<t;}).length;
+  h+=tile('flag','Просрочено',String(ov),ov?'требуют внимания':'всё в срок',null,ov>0);
+  h+=tile('drop','Привычки',hd+'<small> из '+hs.length+'</small>',hs.length?(hd===hs.length?'все отмечены':'осталось '+(hs.length-hd)):'не настроены',pc(hd,hs.length));
+  var wk=(groups.tomorrow||[]).length+(groups.week||[]).length;
+  var goal=+SET.kcalGoal||0,kc=0;
+  if(window.HEALTH&&HEALTH.u&&HEALTH.u.meals){try{HEALTH.u.meals().forEach(function(m){if(m.day===t&&HEALTH.u.isDone(m))kc+=+m.kcal||0;});}catch(e){}}
+  if(goal)h+=tile('leaf','Питание сегодня',Math.round(kc)+'<small> / '+goal+' ккал</small>',kc>goal?'выше цели':'до цели '+Math.max(0,Math.round(goal-kc))+' ккал',pc(kc,goal),kc>goal*1.05);
+  else h+=tile('cal','Ближайшие дни',String(wk),'задач на завтра и неделю',null);
+  return h+'</div>';
+}
 function tasksView(){
   var fl=UI.filter!=='all'?findList(UI.filter):null;if(UI.filter!=='all'&&!fl)UI.filter='all';
   var ts=myTasks().filter(function(t){return UI.filter==='all'?!hiddenTask(t):t.list_id===UI.filter;});
@@ -428,14 +445,19 @@ function tasksView(){
   var todays=groups.today||[],openN=todays.filter(function(t){return !t.done;}).length;
   var out='<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">'+(fl?esc(fl.name):'Задачи')+'</h1></div>'+(isPC()?'':'<button class="iconbtn" data-a="settings" aria-label="Настройки">'+I('gear')+'</button>')+'</div>';
   out+='<form class="quick" id="quick" autocomplete="off"><span class="muted">'+I('plus')+'</span><input id="qin" placeholder="Новая задача, например «завтра в 19:00 купить хлеб»" aria-label="Быстро добавить задачу" value="'+esc(UI.quick)+'">'+micBtn('q')+'<button class="iconbtn" type="button" data-a="add" aria-label="Подробнее">'+I('edit')+'</button></form>';
+  if(isPC()&&!fl)out+=dashTiles(groups,todays,openN);
   if(!fl)out+=habitsRow();
   out+=filterChips();
   var names={overdue:'Просрочено',tomorrow:'Завтра',week:'На неделе',later:'Потом',nodate:fl&&fl.hidden?'В списке':'Без срока'};
-  if(!fl||todays.length){out+=sec('Сегодня',todays.length?(todays.length-openN)+' из '+todays.length:'');
-    if(!openN&&!fl)out+='<div class="alldone">'+I('award')+'<div>Все задачи на сегодня выполнены.<br>Можно отдыхать.</div></div>';
-    todays.sort(sorter).forEach(function(t){out+=taskRow(t,'today');});}
-  ['overdue','tomorrow','week','later','nodate'].forEach(function(g){var it=groups[g];if(!it)return;out+=sec(names[g],'',g==='overdue');it.sort(sorter).forEach(function(t){out+=taskRow(t,g);});});
-  if(fl&&!ts.length)out+='<div class="empty">В списке пока пусто.</div>';
+  var parts={};
+  if(!fl||todays.length){var p='';p+=sec('Сегодня',todays.length?(todays.length-openN)+' из '+todays.length:'');
+    if(!openN&&!fl)p+='<div class="alldone">'+I('award')+'<div>Все задачи на сегодня выполнены.<br>Можно отдыхать.</div></div>';
+    todays.sort(sorter).forEach(function(t){p+=taskRow(t,'today');});parts.today=p;}
+  ['overdue','tomorrow','week','later','nodate'].forEach(function(g){var it=groups[g];if(!it)return;var p=sec(names[g],'',g==='overdue');it.sort(sorter).forEach(function(t){p+=taskRow(t,g);});parts[g]=p;});
+  if(isPC()){
+    var c1=(parts.today||'')+(parts.overdue||''),c2=(parts.tomorrow||'')+(parts.week||'')+(parts.later||'')+(parts.nodate||'');
+    out+='<div class="pgrid'+(c2?'':' one')+'"><div>'+c1+'</div>'+(c2?'<div>'+c2+'</div>':'')+'</div>';
+  }else out+=(parts.today||'')+(parts.overdue||'')+(parts.tomorrow||'')+(parts.week||'')+(parts.later||'')+(parts.nodate||'');  if(fl&&!ts.length)out+='<div class="empty">В списке пока пусто.</div>';
   if(fl){out+='<div class="hint"><button class="link" data-a="listEdit" data-id="'+fl.id+'">Настроить список</button>'+(fl.hidden?' · скрытый список: его задачи не видны во «Все»':'')+'</div>';}
   return out;
 }
@@ -479,9 +501,9 @@ function calView(){
     for(var j=0;j<7;j++){var dd=addDays(m0,j);h+='<div class="wcol"><h4 class="'+(dd===t?'t':'')+'"><button data-a="calPickDay" data-v="'+dd+'">'+WD[j]+', '+fromKey(dd).getDate()+'</button></h4>'+tasksOn(dd).map(function(x){return '<button class="it'+(x.done?' d':'')+'" data-a="open" data-id="'+x.id+'">'+(x.due_time?x.due_time+' ':'')+esc(x.title)+'</button>';}).join('')+logOn(dd).filter(function(l){return !tasksOn(dd).some(function(x){return x.id===l.task_id;});}).map(function(l){return '<div class="it d">'+esc(l.title)+'</div>';}).join('')+'</div>';}
     h+='</div>';
   }else if(mode==='month'){
-    var ms=monthStart(k),st=addDays(ms,-dow(ms)),mm=fromKey(ms).getMonth();h+='<div class="month">'+WD.map(function(w){return '<div class="h">'+w+'</div>';}).join('');
+    var LIM=isPC()?4:2,ms=monthStart(k),st=addDays(ms,-dow(ms)),mm=fromKey(ms).getMonth();h+='<div class="month">'+WD.map(function(w){return '<div class="h">'+w+'</div>';}).join('');
     for(var c=0;c<42;c++){var dk=addDays(st,c);if(c>=35&&fromKey(dk).getMonth()!==mm)break;var tl=tasksOn(dk),n=tl.length+logOn(dk).length;
-      h+='<button class="'+(fromKey(dk).getMonth()!==mm?'out ':'')+(dk===t?'today':'')+'" data-a="calPickDay" data-v="'+dk+'" aria-label="'+fmtLong(dk)+'"><b>'+fromKey(dk).getDate()+'</b>'+tl.slice(0,2).map(function(x){return '<small>'+esc(x.title)+'</small>';}).join('')+(n>2?'<small>ещё '+(n-2)+'</small>':'')+'</button>';}
+      h+='<button class="'+(fromKey(dk).getMonth()!==mm?'out ':'')+(dk===t?'today':'')+'" data-a="calPickDay" data-v="'+dk+'" aria-label="'+fmtLong(dk)+'"><b>'+fromKey(dk).getDate()+'</b>'+tl.slice(0,LIM).map(function(x){return '<small>'+(x.due_time?x.due_time+' ':'')+esc(x.title)+'</small>';}).join('')+(n>LIM?'<small class="more">ещё '+(n-LIM)+'</small>':'')+'</button>';}
     h+='</div>';
   }else{
     var y=fromKey(k).getFullYear();h+='<div class="year">';
@@ -504,13 +526,15 @@ function diaryView(){
   keys.slice(0,90).forEach(function(k){var d=diff(k,T());h+='<div class="dday">'+(d===0?'Сегодня':d===-1?'Вчера':fmtDM(k))+'</div>';days[k].forEach(function(x){var open=x.id&&UI.dopen===x.id;h+='<div class="drow"><span class="b"'+(x.c?' style="background:'+esc(x.c)+'"':'')+'>'+I('check')+'</span><div class="dt"><button type="button" class="dtx'+(open?' open':'')+'" data-a="dTog" data-v="'+(x.id||'')+'">'+esc(x.t)+'</button>'+(x.subs?'<div class="dsubs">'+x.subs.map(function(s){return '<div class="dsub'+(s.done?' done':'')+'">'+(s.done?'✓':'○')+' '+esc(s.t)+'</div>';}).join('')+'</div>':'')+'</div>'+(x.undo||'')+'<span class="at">'+x.at+'</span></div>';});});
   return h;
 }
+function habRate(h){var t=T(),n=0,d=0;for(var i=0;i<30;i++){var k=addDays(t,-i);if(k<h.started_on||!sched(h,k))continue;n++;if(hDone(h,k))d++;}return n?Math.round(d*100/n):0;}
 function habitsView(){
   var h='<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">Привычки</h1></div><button class="btn2" data-a="habNew">'+I('plus')+'Новая</button></div>';
   var hs=D.habits.filter(function(x){return !x.finished;});
   if(!hs.length)return h+'<div class="empty">Привычек пока нет. Нажми «Новая».</div>';
-  var t=T(),mon=addDays(t,-6);
-  hs.forEach(function(x){h+='<div class="task habrow"><button class="tb" data-a="habOpen" data-id="'+x.id+'"><span class="tt" style="display:flex;align-items:center;gap:10px"><span style="color:'+esc(x.color)+'">'+I(x.icon)+'</span>'+esc(x.name)+'</span><span class="meta"><span>'+daysText(x)+'</span><span>'+streak(x)+' '+plural(streak(x),'день','дня','дней')+' подряд</span>'+(x.paused?'<span>на паузе</span>':'')+'</span></button><div class="habdays">';
-    for(var i=0;i<7;i++){var d=addDays(mon,i),on=hDone(x,d);h+='<button data-a="habDay" data-id="'+x.id+'" data-v="'+d+'" aria-label="'+fmtLong(d)+'" style="width:28px;height:28px;border-radius:50%;'+(on?'background:'+esc(x.color):'border:1.5px '+(sched(x,d)?'solid':'dashed')+' var(--line)')+'"></button>';}
+  var t=T(),ND=isPC()?14:7,mon=addDays(t,-(ND-1));
+  if(isPC()){h+='<div class="habhead"><div class="habdays">';for(var q2=0;q2<ND;q2++){var dq=addDays(mon,q2);h+='<span class="'+(dq===t?'now':'')+'">'+WD[dow(dq)]+'<b>'+fromKey(dq).getDate()+'</b></span>';}h+='</div></div>';}
+  hs.forEach(function(x){h+='<div class="task habrow"><button class="tb" data-a="habOpen" data-id="'+x.id+'"><span class="tt" style="display:flex;align-items:center;gap:10px"><span style="color:'+esc(x.color)+'">'+I(x.icon)+'</span>'+esc(x.name)+'</span><span class="meta"><span>'+daysText(x)+'</span><span>'+streak(x)+' '+plural(streak(x),'день','дня','дней')+' подряд</span>'+(isPC()?'<span>'+habRate(x)+'% за 30 дней</span>':'')+(x.paused?'<span>на паузе</span>':'')+'</span></button><div class="habdays">';
+    for(var i=0;i<ND;i++){var d=addDays(mon,i),on=hDone(x,d);h+='<button data-a="habDay" data-id="'+x.id+'" data-v="'+d+'" aria-label="'+fmtLong(d)+'" style="width:28px;height:28px;border-radius:50%;'+(on?'background:'+esc(x.color):'border:1.5px '+(sched(x,d)?'solid':'dashed')+' var(--line)')+'"></button>';}
     h+='</div></div>';});
   return h;
 }
@@ -616,8 +640,11 @@ async function asAddTask(mi,ti){var m=AS.msgs[mi],t=m&&m.tasks[ti];if(!t||t._add
 function sidebar(){
   var nav=function(v,icn,t,n){return '<button class="'+(UI.view===v&&(v!=='tasks'||UI.filter==='all')?'on':'')+'" data-a="go" data-v="'+v+'">'+I(icn)+'<span class="l">'+t+'</span>'+(n?'<span class="n">'+n+'</span>':'')+'</button>';};
   var todayN=myTasks().filter(function(t){return !t.done&&!hiddenTask(t)&&groupOf(t)==='today';}).length;
-  var h='<div class="logo" style="padding:0 12px"><b>'+I('check')+'</b>задачи</div><div class="nav">'+nav('tasks','sun','Задачи',todayN||'')+nav('inbox','inbox','Входящие',inbox().length||'')+nav('calendar','cal','Календарь')+nav('habits','drop','Привычки')+nav('food','leaf','Питание')+nav('fit','dumb','Тренировки')+nav('well','heart','Здоровье')+nav('support','star','Поддержка')+nav('diary','book','Дневник')+nav('notes','note','Заметки')+nav('assistant','spark','Помощник')+'</div>';
-  var own=D.lists.filter(function(l){return !isShared(l);}),sh=D.lists.filter(isShared);
+  var grp=function(t,items){return '<div class="nav"><div class="t">'+t+'</div>'+items+'</div>';};
+  var h='<div class="logo" style="padding:0 12px"><b>'+I('check')+'</b><span>задачи</span></div><button class="btn sidenew" data-a="add">'+I('plus')+'<span>Новая задача</span></button>'
+    +grp('Планирование',nav('tasks','sun','Задачи',todayN||'')+nav('inbox','inbox','Входящие',inbox().length||'')+nav('calendar','cal','Календарь')+nav('habits','drop','Привычки')+nav('diary','book','Дневник'))
+    +grp('Тело и здоровье',nav('food','leaf','Питание')+nav('fit','dumb','Тренировки')+nav('well','heart','Здоровье')+nav('support','star','Поддержка'))
+    +grp('Инструменты',nav('notes','note','Заметки')+nav('assistant','spark','Помощник'));  var own=D.lists.filter(function(l){return !isShared(l);}),sh=D.lists.filter(isShared);
   var li=function(l){var n=myTasks().filter(function(t){return t.list_id===l.id&&!t.done;}).length;return '<button class="'+(UI.view==='tasks'&&UI.filter===l.id?'on':'')+'" data-a="filter" data-v="'+l.id+'"><i class="dot" style="--c:'+esc(l.color)+'"></i><span class="l">'+esc(l.name)+'</span><span class="n">'+(l.hidden?I('eyeoff'):'')+(n||'')+'</span></button>';};
   h+='<div class="nav"><div class="t">Списки</div>'+own.map(li).join('')+'<button data-a="listNew">'+I('plus')+'<span class="l">Новый список</span></button></div>';
   if(sh.length)h+='<div class="nav"><div class="t">Общие</div>'+sh.map(li).join('')+'</div>';
@@ -644,7 +671,7 @@ function render(){
   var ae=document.activeElement,keep=null;
   if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA')&&ae.closest('#app')){var fm=ae.form;keep={id:ae.id,cf:fm&&fm.getAttribute('data-cform'),sf:fm&&fm.getAttribute('data-subform'),v:ae.value,pos:ae.selectionStart};}
   var detail='';
-  if(pc&&(UI.sel||UI.view==='tasks'||UI.view==='inbox'||UI.view==='calendar')){var t=UI.sel&&findTask(UI.sel);detail=t?'<aside class="detail" aria-label="Задача">'+detailHead(t)+'<div class="sb">'+taskDetail(t)+'</div><div class="sf">'+taskActions(t)+'</div></aside>':'<aside class="detail empty">Выбери задачу, чтобы увидеть подробности</aside>';}
+  if(pc&&wide()&&(UI.sel||UI.view==='tasks'||UI.view==='inbox')){var t=UI.sel&&findTask(UI.sel);detail=t?'<aside class="detail" aria-label="Задача">'+detailHead(t)+'<div class="sb">'+taskDetail(t)+'</div><div class="sf">'+taskActions(t)+'</div></aside>':'<aside class="detail empty">Выбери задачу, чтобы увидеть подробности</aside>';}
   app.innerHTML='<div class="shell">'+(pc?'<aside class="side">'+sidebar()+'</aside>':'')+'<main class="main"><div class="wrap">'+mainContent()+'</div></main>'+detail+'</div>'+(pc?'':bottomNav()+(UI.view==='tasks'||UI.view==='calendar'?'<button class="fab" data-a="add" aria-label="Новая задача">'+I('plus')+'</button>':''));
   var m2=app.querySelector('.main');if(m2)m2.scrollTop=scroll;
   bindMain();
@@ -938,7 +965,7 @@ function defaultsInto(d){var df=SET.def||SET_DEF.def,t=T();d.tpl=null;d.recur='n
   d.due_date=df.date==='today'?t:df.date==='tomorrow'?addDays(t,1):null;
   if(d.due_date&&df.time==='fixed')d.due_time=df.at||'09:00';else if(d.due_date&&df.time==='next'){var hh=new Date().getHours()+1;d.due_time=hh<=23?pad(hh)+':00':null;}else d.due_time=null;
   d.remind_every=+df.every||0;d.remind_times=+df.times||0;}
-function openTask(id){if(isPC()){UI.sel=id;UI.sheet=null;renderSheet();render();}else{UI.sheet={type:'task',id:id};renderSheet(true);}}
+function openTask(id){if(wide()){UI.sel=id;UI.sheet=null;renderSheet();render();}else{UI.sheet={type:'task',id:id};renderSheet(true);}}
 function openAdd(title,extra){
   if(!title&&!extra){var dr=null;try{dr=JSON.parse(localStorage.getItem(draftKey())||'null');}catch(e){}
     if(dr&&dr.type==='task-edit'){dr._draft=true;dr.remind_at=dr.remind_at||[];dr.rule=dr.rule||{};dr.recur_days=dr.recur_days||[];UI.sheet=dr;renderSheet(true);return;}}
