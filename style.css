@@ -422,3 +422,29 @@ body.pc .tabs::-webkit-scrollbar,body.pc .chipsrow::-webkit-scrollbar,body.pc .h
 body.pc .tabs::-webkit-scrollbar-thumb,body.pc .chipsrow::-webkit-scrollbar-thumb,body.pc .habits::-webkit-scrollbar-thumb{background:var(--faint);border-radius:3px}
 body.pc .tabs.dragging,body.pc .chipsrow.dragging,body.pc .habits.dragging{cursor:grabbing}
 .dragging *{pointer-events:none}
+
+/* =================== Здоровье =================== */
+.tbtns{display:flex;gap:8px;align-items:center}
+.hbell{padding:0 12px}
+.wdisc{font-size:12.5px;line-height:1.5;color:var(--muted);margin:18px 0 6px}
+.wdet summary{cursor:pointer;font-size:14px;margin-bottom:8px}
+.wn{margin-top:12px}
+.wn .hmn{font-size:14px;color:var(--ink)}
+.wn .hbar{margin-top:4px}
+.wsub{display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-top:4px}
+.wslots{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.wslot{font-size:12px;border:1px solid var(--line);border-radius:10px;padding:2px 8px;color:var(--muted)}
+.wslot.on{background:var(--soft);color:var(--ink);border-color:var(--soft)}
+.wtake{flex-shrink:0;height:40px;align-self:center}
+.wdot{width:12px;height:12px;border-radius:50%;display:block}
+.wlrow{padding:0 6px 0 0}
+.wlmain{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;text-align:left;padding:8px 0}
+.wlmain span{flex:1 1 100%;color:var(--ink)}
+.wlmain i{font-style:normal;font-size:12.5px}
+.wpdf{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:12px;color:var(--muted)}
+.wpdf svg.i{width:26px;height:26px}
+
+/* шапка раздела не вылезает за экран: заголовок и кнопки переносятся, заголовок чуть меньше на узких экранах */
+.top{flex-wrap:wrap}
+.dh{font-size:clamp(30px,9.5vw,40px)}
+.tbtns{margin-left:auto}

@@ -195,6 +195,7 @@
         var t = r.total || {};
         if (!s.title || s._autoTitle) { s.title = r.name || s.title; s._autoTitle = true; }
         s.kcal = r1(t.kcal); s.protein = r1(t.protein); s.fat = r1(t.fat); s.carbs = r1(t.carbs);
+        s.micros = cleanMicros(r.micros);
         if (t.grams) s.grams = r1(t.grams);
         s.items = r.items || [];
         s._note = (r.confidence === 'high' ? 'Оценка уверенная. ' : r.confidence === 'medium' ? 'Оценка средней точности. ' : 'Оценка приблизительная. ') + (r.notes || '');
@@ -217,10 +218,17 @@
 
   /* Пересчёт по этикетке: цифры «на 100 г» умножаются на вес порции.
      Если цифр ещё нет, но есть фото — сначала считываем их с этикетки (ИИ), потом пересчитываем. */
+  /* микроэлементы: только числа больше нуля, до 4 знаков */
+  function cleanMicros(m) {
+    var out = {}, n = 0;
+    Object.keys(m || {}).forEach(function (k) { var v = num(m[k]); if (v != null && v > 0) { out[k] = Math.round(v * 1000) / 1000; n++; } });
+    return n ? out : null;
+  }
   function scaleLabel(s) {
     var g = num(s.grams), k = g / 100;
     var put = function (f, p) { var v = num(s[p]); s[f] = v == null ? '' : r1(v * k); };
     put('kcal', 'p_kcal'); put('protein', 'p_protein'); put('fat', 'p_fat'); put('carbs', 'p_carbs');
+    if (s.pm) { var sc = {}; Object.keys(s.pm).forEach(function (key) { sc[key] = s.pm[key] * k; }); s.micros = cleanMicros(sc); }
     s._note = 'Пересчитано на ' + r1(g) + ' г по этикетке (на 100 г: ' + [s.p_kcal ? s.p_kcal + ' ккал' : '', s.p_protein ? 'Б ' + s.p_protein : '', s.p_fat ? 'Ж ' + s.p_fat : '', s.p_carbs ? 'У ' + s.p_carbs : ''].filter(Boolean).join(', ') + ').';
     s._err = '';
   }
@@ -241,6 +249,7 @@
       if (UI.sheet !== s) return;
       var p = r.per100 || {};
       s.p_kcal = r1(p.kcal); s.p_protein = r1(p.protein); s.p_fat = r1(p.fat); s.p_carbs = r1(p.carbs);
+      s.pm = cleanMicros(r.micros_per100);   // микроэлементы на 100 г, если указаны на этикетке
       s.ai = Object.assign({}, s.ai || {}, { label: r });
       if (!s.title && r.name) s.title = r.name;
       if (!['p_kcal', 'p_protein', 'p_fat', 'p_carbs'].some(function (f) { return s[f] !== ''; })) {
@@ -253,13 +262,29 @@
   }
 
   /* ---------- связь с обычными задачами ---------- */
-  async function makeTask(prefix, title, dayKey, time) {
+  /* Настройки напоминания у задачи: за сколько минут (lead: -1 — без напоминания) и через сколько повторять (nag, минуты) */
+  function remindFields(time, rem) {
+    var lead = rem && rem.lead != null ? +rem.lead : 0, nag = rem && rem.nag != null ? +rem.nag : 10;
+    if (!time || lead < 0 || isNaN(lead)) return { due_time: null, remind_every: 0, remind_times: 0, lead: -1 };
+    var p = time.split(':'), m = Math.max(0, (+p[0]) * 60 + (+p[1]) - lead);
+    return { due_time: String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'), remind_every: nag || 0, remind_times: nag ? 3 : 0, lead: lead };
+  }
+  function taskTitle(prefix, title, time, rf) {
+    var same = !title || String(title).trim().toLowerCase() === String(prefix).trim().toLowerCase();   // «Обед: Обед» не нужно
+    return (prefix + (same ? '' : ': ' + title) + (rf.lead > 0 && time ? ' · в ' + time : '')).slice(0, 200);
+  }
+  async function makeTask(prefix, title, dayKey, time, rem) {
+    var rf = remindFields(time, rem);
     var r = await createTask({
-      title: (prefix + (title ? ': ' + title : '')).slice(0, 200),
-      due_date: dayKey, due_time: time || null,
-      remind_every: time ? 10 : 0, remind_times: time ? 3 : 0
+      title: taskTitle(prefix, title, time, rf),
+      due_date: dayKey, due_time: rf.due_time,
+      remind_every: rf.remind_every, remind_times: rf.remind_times
     });
     return r ? r.id : null;
+  }
+  function patchLinkedTask(taskId, prefix, title, dayKey, time, rem) {
+    var rf = remindFields(time, rem);
+    patchTask(taskId, { title: taskTitle(prefix, title, time, rf), due_date: dayKey, due_time: rf.due_time, remind_every: rf.remind_every, remind_times: rf.remind_times });
   }
   async function toggleLinked(rec, table) {
     var t = rec.task_id && findTask(rec.task_id);
@@ -286,9 +311,11 @@
     });
     return t;
   }
+  /* повторяющиеся напоминания (каждый день в 8:30 и т. п.): живут в разделе «Здоровье» (wellbeing.js) */
+  function bellBtn(kind) { return window.WELL ? '<button class="btn2 hbell" data-a="wPlans" data-v="' + kind + '" aria-label="Напоминания">' + I('bell') + '</button>' : ''; }
   function foodView() {
     var d = day(), h = '<div class="top"><div><div class="date">' + fmtLong(T()) + '</div><h1 class="dh">Питание</h1></div>' +
-      (HUI.foodTab === 'day' ? '<button class="btn2" data-a="hMealNew">' + I('plus') + 'Добавить</button>' : '') + '</div>';
+      '<div class="tbtns">' + bellBtn('meal') + (HUI.foodTab === 'day' ? '<button class="btn2" data-a="hMealNew">' + I('plus') + 'Добавить</button>' : '') + '</div></div>';
     h += tabs([['day', 'День'], ['kitchen', 'Кухня']], HUI.foodTab, 'hFoodTab');
     if (!H.ok) return h + notReady();
     return h + (HUI.foodTab === 'day' ? foodDay(d) : kitchenView());
@@ -404,15 +431,47 @@
     if (s._note) h += '<div class="hnote">' + esc(s._note) + '</div>';
     if ((s.items || []).length) h += '<div class="fields">' + s.items.map(function (i) { return '<div class="fr"><span>' + esc(i.name) + (i.grams ? ', ' + Math.round(i.grams) + ' г' : '') + '</span><b style="font-weight:500">' + Math.round(i.kcal || 0) + ' ккал</b></div>'; }).join('') + '</div>';
     h += section('Итого в порции', '<div class="row2">' + numField('kcal', 'Ккал', s.kcal) + '</div><div class="row3" style="margin-top:10px">' + numField('protein', 'Белки, г', s.protein) + numField('fat', 'Жиры, г', s.fat) + numField('carbs', 'Углеводы, г', s.carbs) + '</div>');
+    h += microBlock(s);
+    if (s.planned) h += remindBlock(s);
     h += field('note', 'Заметка', s.note, 'autocomplete="off"');
     return h;
+  }
+  function nutMeta(k) { return window.WELL && WELL.nutMeta ? WELL.nutMeta(k) : { n: k, u: '' }; }
+  function microBlock(s) {
+    var keys = Object.keys(s.micros || {});
+    var list = keys.length
+      ? '<details class="wdet"><summary>Оценка есть: ' + keys.length + ' ' + plural(keys.length, 'показатель', 'показателя', 'показателей') + '</summary><div class="fields">' + keys.map(function (k) { var m = nutMeta(k); return '<div class="fr"><span>' + esc(m.n) + '</span><b style="font-weight:500">' + r1(s.micros[k]) + ' ' + esc(m.u) + '</b></div>'; }).join('') + '</div></details>'
+      : '<div class="muted" style="font-size:13px;line-height:1.45">Витамины и минералы пока не оценены. Они нужны для раздела «Здоровье».</div>';
+    return section('Витамины и минералы', list + '<button type="button" class="btn2" style="width:100%;margin-top:8px" data-a="hMicro"' + (s._microBusy ? ' disabled' : '') + '>' + I('spark') + (s._microBusy ? 'Оцениваю…' : (keys.length ? 'Оценить заново' : 'Оценить витамины и минералы')) + '</button>' + (s._microErr ? '<div class="herr" style="margin-top:8px">' + esc(s._microErr) + '</div>' : ''));
+  }
+  async function microGo() {
+    var s = UI.sheet; if (!s || s._microBusy) return;
+    if (!(s.title || '').trim() && !s.photos.length) { toast('Сначала напиши, что это, или добавь фото'); return; }
+    s._microBusy = true; s._microErr = ''; renderSheet();
+    try {
+      var r = await callAI({ mode: 'micro', title: s.title || 'Приём пищи', grams: num(s.grams), kcal: num(s.kcal), protein: num(s.protein), fat: num(s.fat), carbs: num(s.carbs), text: s.hint || '' });
+      if (UI.sheet !== s) return;
+      s.micros = cleanMicros(r.micros);
+      if (!s.micros) s._microErr = 'Не удалось оценить: ' + (r.notes || 'слишком мало данных о блюде.');
+      else if (r.notes) s._note = (s._note ? s._note + ' ' : '') + r.notes;
+    } catch (e) { s._microErr = e.message || 'Не получилось'; }
+    s._microBusy = false; if (UI.sheet === s) renderSheet();
+  }
+
+  /* Напоминание о запланированной еде или тренировке: за сколько минут и сколько раз повторять, пока не отмечу */
+  function remindBlock(s) {
+    return section('Напоминание', chipSet('lead', [['-1', 'Без напоминания'], ['0', 'В это время'], ['15', 'За 15 мин'], ['30', 'За 30 мин'], ['60', 'За 1 час']], s.lead == null ? '0' : s.lead) +
+      (String(s.lead == null ? '0' : s.lead) === '-1' ? '' : '<div style="margin-top:8px">' + chipSet('nag', [['0', 'Не повторять'], ['10', 'Повторять через 10 мин'], ['30', 'Через 30 мин']], s.nag == null ? '10' : s.nag) + '</div>') +
+      (!s.at && String(s.lead == null ? '0' : s.lead) !== '-1' ? '<div class="muted" style="font-size:13px;margin-top:6px">Укажи время, иначе уведомление не придёт.</div>' : ''));
   }
   function mealOpen(m, preset) {
     var base = { type: 'h-meal', id: null, day: day(), at: '', kind: guessKind(), title: '', grams: '', kcal: '', protein: '', fat: '', carbs: '', p_kcal: '', p_protein: '', p_fat: '', p_carbs: '', note: '', photos: [], planned: false, _rm: [] };
     if (m) {
-      base = Object.assign(base, { id: m.id, day: m.day, at: hm(m.at), kind: m.kind, title: m.title, grams: r1(m.grams), kcal: r1(m.kcal), protein: r1(m.protein), fat: r1(m.fat), carbs: r1(m.carbs), note: m.note || '', photos: (m.photos || []).slice(), planned: m.planned, task_id: m.task_id, ai: m.ai });
+      base = Object.assign(base, { id: m.id, day: m.day, at: hm(m.at), kind: m.kind, title: m.title, grams: r1(m.grams), kcal: r1(m.kcal), protein: r1(m.protein), fat: r1(m.fat), carbs: r1(m.carbs), note: m.note || '', photos: (m.photos || []).slice(), planned: m.planned, task_id: m.task_id, ai: m.ai, micros: m.micros || null });
       var p100 = m.ai && m.ai.per100;   // цифры с этикетки сохраняются, чтобы пересчитать при правке веса
       if (p100) Object.assign(base, { p_kcal: r1(p100.kcal), p_protein: r1(p100.protein), p_fat: r1(p100.fat), p_carbs: r1(p100.carbs) });
+      if (m.ai && m.ai.pm) base.pm = m.ai.pm;
+      if (m.ai && m.ai.remind) Object.assign(base, { lead: m.ai.remind.lead, nag: m.ai.remind.nag });
     }
     if (preset) Object.assign(base, preset);
     UI.sheet = base; renderSheet(true);
@@ -431,11 +490,15 @@
     };
     var per = { kcal: num(s.p_kcal), protein: num(s.p_protein), fat: num(s.p_fat), carbs: num(s.p_carbs) };
     if (per.kcal != null || per.protein != null || per.fat != null || per.carbs != null) row.ai = Object.assign({}, row.ai || {}, { per100: per });
+    if (s.pm) row.ai = Object.assign({}, row.ai || {}, { pm: s.pm });
+    if (s.planned) row.ai = Object.assign({}, row.ai || {}, { remind: { lead: s.lead == null ? '0' : s.lead, nag: s.nag == null ? '10' : s.nag } });
+    row.micros = cleanMicros(s.micros);
     try {
       if (s.planned) {
         var k = KIND[s.kind] || KIND.snack;
-        if (s.id && s.task_id && findTask(s.task_id)) patchTask(s.task_id, { title: (k.name + ': ' + row.title).slice(0, 200), due_date: row.day, due_time: row.at });
-        else if (!s.task_id) row.task_id = await makeTask(k.name, row.title, row.day, row.at);
+        var rem = { lead: s.lead == null ? '0' : s.lead, nag: s.nag == null ? '10' : s.nag };
+        if (s.id && s.task_id && findTask(s.task_id)) patchLinkedTask(s.task_id, k.name, row.title, row.day, row.at, rem);
+        else if (!s.task_id) row.task_id = await makeTask(k.name, row.title, row.day, row.at, rem);
       }
       var saved = s.id
         ? await q(sb.from('meals').update(row).eq('id', s.id).select().single())
@@ -503,7 +566,7 @@
 
   /* =================== ТРЕНИРОВКИ =================== */
   function fitView() {
-    var h = '<div class="top"><div><div class="date">' + fmtLong(T()) + '</div><h1 class="dh">Тренировки</h1></div><button class="btn2" data-a="' + (HUI.fitTab === 'body' ? 'hBodyNew' : 'hWorkNew') + '">' + I('plus') + (HUI.fitTab === 'body' ? 'Замер' : 'Добавить') + '</button></div>';
+    var h = '<div class="top"><div><div class="date">' + fmtLong(T()) + '</div><h1 class="dh">Тренировки</h1></div><div class="tbtns">' + bellBtn('workout') + '<button class="btn2" data-a="' + (HUI.fitTab === 'body' ? 'hBodyNew' : 'hWorkNew') + '">' + I('plus') + (HUI.fitTab === 'body' ? 'Замер' : 'Добавить') + '</button></div></div>';
     h += tabs([['log', 'Тренировки'], ['load', 'Нагрузка'], ['prog', 'Прогресс'], ['body', 'Замеры']], HUI.fitTab, 'hFitTab');
     if (!H.ok) return h + notReady();
     return h + (HUI.fitTab === 'log' ? workLog() : HUI.fitTab === 'load' ? loadView() : HUI.fitTab === 'prog' ? progView() : bodyView());
@@ -546,12 +609,14 @@
     if (s._note) h += '<div class="hnote">' + esc(s._note) + '</div>';
     if ((s.metrics || []).length) h += '<div class="fields">' + s.metrics.map(function (m, i) { return '<div class="fr"><span>' + esc(m.name) + '</span><b style="font-weight:500">' + esc(m.value) + (m.unit ? ' ' + esc(m.unit) : '') + '</b><button type="button" class="iconbtn" data-a="hMetricDel" data-v="' + i + '" aria-label="Убрать">' + I('x') + '</button></div>'; }).join('') + '</div>';
     h += '<div class="row2">' + numField('minutes', 'Минуты', s.minutes) + numField('kcal', 'Ккал', s.kcal) + '</div>';
+    if (s.planned) h += remindBlock(s);
     h += field('note', 'Заметка', s.note, 'autocomplete="off"');
     return h;
   }
   function workOpen(w, preset) {
     var base = { type: 'h-work', id: null, day: T(), at: '', kind: 'strength', title: '', minutes: '', kcal: '', note: '', photos: [], metrics: [], exercises: [], liftText: '', planned: false, _rm: [] };
     if (w) base = Object.assign(base, { id: w.id, day: w.day, at: hm(w.at), kind: w.kind, title: w.title, minutes: r1(w.minutes), kcal: r1(w.kcal), note: w.note || '', photos: (w.photos || []).slice(), metrics: (w.metrics || []).slice(), exercises: JSON.parse(JSON.stringify(w.exercises || [])), liftText: (w.ai && w.ai.liftText) || '', planned: w.planned, task_id: w.task_id, ai: w.ai });
+    if (w && w.ai && w.ai.remind) Object.assign(base, { lead: w.ai.remind.lead, nag: w.ai.remind.nag });
     if (preset) Object.assign(base, preset);
     UI.sheet = base; renderSheet(true);
   }
@@ -562,10 +627,12 @@
     var exs = cleanExercises(s.exercises);
     var row = { owner: X.ME, day: s.day || T(), at: s.at || null, kind: s.kind, title: title, minutes: num(s.minutes), kcal: num(s.kcal), note: s.note || '', photos: s.photos, metrics: s.metrics || [], exercises: exs, planned: !!s.planned, ai: s.ai || null };
     if ((s.liftText || '').trim()) row.ai = Object.assign({}, row.ai || {}, { liftText: s.liftText });
+    if (s.planned) row.ai = Object.assign({}, row.ai || {}, { remind: { lead: s.lead == null ? '0' : s.lead, nag: s.nag == null ? '10' : s.nag } });
     try {
       if (s.planned) {
-        if (s.id && s.task_id && findTask(s.task_id)) patchTask(s.task_id, { title: ('Тренировка: ' + title).slice(0, 200), due_date: row.day, due_time: row.at });
-        else if (!s.task_id) row.task_id = await makeTask('Тренировка', title, row.day, row.at);
+        var remW = { lead: s.lead == null ? '0' : s.lead, nag: s.nag == null ? '10' : s.nag };
+        if (s.id && s.task_id && findTask(s.task_id)) patchLinkedTask(s.task_id, 'Тренировка', title, row.day, row.at, remW);
+        else if (!s.task_id) row.task_id = await makeTask('Тренировка', title, row.day, row.at, remW);
       }
       var saved = s.id
         ? await q(sb.from('workouts').update(row).eq('id', s.id).select().single())
@@ -875,6 +942,7 @@
     },
     hAnalyze: function (v) { analyze(v); },
     hLabel: function () { labelGo(); },
+    hMicro: function () { microGo(); },
     hMetricDel: function (v) { var s = UI.sheet; if (s && s.metrics) { s.metrics.splice(+v, 1); renderSheet(); } },
     /* еда */
     hMealNew: function () { mealOpen(null, { day: day() }); },
@@ -946,7 +1014,7 @@
   };
 
   /* поля формы пишем в состояние окна, чтобы перерисовка ничего не стирала */
-  function isH() { return UI.sheet && String(UI.sheet.type).indexOf('h-') === 0; }
+  function isH() { return UI.sheet && /^[hw]-/.test(String(UI.sheet.type)); }   // окна «Питания/Тренировок» (h-) и «Здоровья» (w-)
   /* таблица упражнений: data-ex="упражнение:поле" или "упражнение:подход:поле" */
   function setEx(el) {
     var s = UI.sheet, p = el.getAttribute('data-ex').split(':'), ex = s.exercises && s.exercises[+p[0]]; if (!ex) return;
@@ -1003,18 +1071,21 @@
     rerenderKeep();
   }
 
-  var ETITLE = { meal: 'Питание', workout: 'Тренировки', body: 'Замеры', pantry: 'Холодильник', note: 'Заметки' };
+  var ETITLE = { meal: 'Питание', workout: 'Тренировки', body: 'Замеры', pantry: 'Холодильник', note: 'Заметки', cabinet: 'Аптечка', intake: 'Приём', lab: 'Анализы' };
+  function wellOwns(t) { return !!(window.WELL && WELL.owns(t)); }   // типы записей раздела «Здоровье»
   function asEntries(a, photos) {
     var out = [], used = false;
     var withPh = function () { if (used || !photos || !photos.length) return []; used = true; return photos.slice(); };
     (a.meals || []).forEach(function (d) { out.push({ t: 'meal', d: d, photos: withPh() }); });
     (a.workouts || []).forEach(function (d) { out.push({ t: 'workout', d: d, photos: withPh() }); });
     (a.body_logs || []).forEach(function (d) { out.push({ t: 'body', d: d, photos: withPh() }); });
+    if (window.WELL) out = out.concat(WELL.asEntries(a, withPh));
     (a.pantry_items || []).forEach(function (d) { out.push({ t: 'pantry', d: d }); });
     (a.new_notes || []).forEach(function (d) { out.push({ t: 'note', d: d }); });
     return out;
   }
   function entryInfo(e) {
+    if (wellOwns(e.t)) return WELL.entryInfo(e);
     var d = e.d, when = function () { return (d.planned ? 'запланировано, ' : '') + dayWord(d.day || T()).toLowerCase() + (d.at ? ' ' + d.at : ''); };
     if (e.t === 'meal') {
       var k = KIND[d.kind] || KIND.snack;
@@ -1029,8 +1100,8 @@
     if (e.t === 'pantry') return { title: d.name, meta: [d.kind === 'spice' ? 'приправа' : 'продукт', d.qty != null ? r1(d.qty) + ' ' + (d.unit || '') : '', d.expires ? 'до ' + fmtDM(d.expires) : ''], note: '' };
     return { title: d.title, meta: [], note: String(d.body || '').slice(0, 140) };
   }
-  var BTN = { meal: function (d) { return d.planned ? 'Запланировать' : 'Записать в питание'; }, workout: function (d) { return d.planned ? 'Запланировать' : 'Записать тренировку'; }, body: function () { return 'Записать замер'; }, pantry: function (d) { return d.kind === 'spice' ? 'В приправы' : 'В холодильник'; }, note: function () { return 'Создать заметку'; } };
-  var DONE = { ok: 'записано', note: 'в заметках', task: 'в задачах' };
+  var BTN = { meal: function (d) { return d.planned ? 'Запланировать' : 'Записать в питание'; }, workout: function (d) { return d.planned ? 'Запланировать' : 'Записать тренировку'; }, body: function () { return 'Записать замер'; }, pantry: function (d) { return d.kind === 'spice' ? 'В приправы' : 'В холодильник'; }, note: function () { return 'Создать заметку'; }, cabinet: function () { return 'В аптечку'; }, intake: function () { return 'Записать приём'; }, lab: function () { return 'Записать анализы'; } };
+  var DONE ={ ok: 'записано', note: 'в заметках', task: 'в задачах' };
   function asCards(m, mi) {
     var es = m.entries || []; if (!es.length) return '';
     var open = es.filter(function (e) { return !e._done; }).length, h = '';
@@ -1080,6 +1151,7 @@
     if (X.D.notes.indexOf(row) < 0) X.D.notes.unshift(row);
   }
   function entryText(e) {
+    if (wellOwns(e.t)) return WELL.entryText(e);
     var inf = entryInfo(e), d = e.d;
     if (e.t === 'note') return { title: d.title, body: d.body || '' };
     var lines = [inf.meta.filter(Boolean).join(' · ')];
@@ -1101,6 +1173,7 @@
         else if (e.t === 'body') await addBodyFrom(e.d, e.photos);
         else if (e.t === 'pantry') await addPantryFrom(e.d);
         else if (e.t === 'note') await addNoteFrom(e.d.title, e.d.body);
+        else if (wellOwns(e.t)) await WELL.addFrom(e);
         e._done = 'ok';
       }
       X.asSave(); render(); return true;
@@ -1128,7 +1201,17 @@
   window.HEALTH = {
     load: load, foodView: foodView, fitView: fitView, sheet: sheet,
     asAttach: asAttach, asPending: asPending, asPendingPaths: function () { return PEND.slice(); }, asUploading: function () { return PEND_UP > 0; },
-    asTake: function () { var p = PEND; PEND = []; return p; }, asPhotos: asPhotos, asImages: asImages, asEntries: asEntries, asCards: asCards, asSummary: asSummary
+    asTake: function () { var p = PEND; PEND = []; return p; }, asPhotos: asPhotos, asImages: asImages, asEntries: asEntries, asCards: asCards, asSummary: asSummary,
+    /* утилиты для раздела «Здоровье» (wellbeing.js) */
+    u: {
+      num: num, r1: r1, hm: hm, field: field, numField: numField, chipSet: chipSet, section: section, tabs: tabs, photoBlock: photoBlock,
+      callAI: callAI, photoBlob: photoBlob, blobB64: blobB64, BLOBS: BLOBS, shrink: shrink, BUCKET: BUCKET, CAM: CAM, KIND: KIND, cleanMicros: cleanMicros,
+      meals: function () { return H.meals; }, isDone: isDone, load: load,
+      updateMealMicros: async function (id, micros) {
+        var row = await q(sb.from('meals').update({ micros: micros }).eq('id', id).select().single());
+        var i = H.meals.findIndex(function (x) { return x.id === id; }); if (i >= 0) H.meals[i] = row; return row;
+      }
+    }
   };
   /* если основное приложение уже успело загрузиться раньше этого файла — догружаем данные разделов */
   if (X.ME && X.D.profiles.length) load().then(function () { render(); });
