@@ -15,6 +15,7 @@
     patchTask = X.patchTask, completeTask = X.completeTask, reopenTask = X.reopenTask, deleteTask = X.deleteTask,
     findTask = X.findTask, saveSettings = X.saveSettings;
 
+  var CAM = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
   var BUCKET = 'health';
   var H = { meals: [], pantry: [], appliances: [], workouts: [], body: [], ok: false, error: '' };
   var HUI = { foodTab: 'day', day: null, kTab: 'fridge', fitTab: 'log' };
@@ -158,8 +159,8 @@
       h += '<div class="hph"><img data-ph="' + esc(p) + '" alt="Фото"><button type="button" data-a="hPhotoDel" data-v="' + i + '" aria-label="Убрать фото">' + I('x') + '</button></div>';
     });
     if ((s.photos || []).length < 4) {
-      h += '<label class="hadd">' + I('plus') + '<span>' + (s._up ? 'Загружаю…' : 'Сфотографировать') + '</span><input type="file" accept="image/*" capture="environment" data-hfile hidden></label>';
-      h += '<label class="hadd">' + I('inbox') + '<span>Из галереи</span><input type="file" accept="image/*" multiple data-hfile hidden></label>';
+      h += '<label class="hadd">' + CAM + '<span>' + (s._up ? 'Загрузка…' : 'Снять') + '</span><input type="file" accept="image/*" capture="environment" data-hfile hidden></label>';
+      h += '<label class="hadd">' + I('inbox') + '<span>Галерея</span><input type="file" accept="image/*" multiple data-hfile hidden></label>';
     }
     return h + '</div>';
   }
@@ -210,6 +211,43 @@
         if (r.muscle_kg != null) s.muscle = r1(r.muscle_kg);
         s._note = (r.notes || '') + ((r.other || []).length ? ' Ещё на экране: ' + r.other.map(function (o) { return o.name + ' ' + o.value + (o.unit ? ' ' + o.unit : ''); }).join(', ') + '.' : '');
       }
+    } catch (e) { s._err = e.message || 'Не получилось'; }
+    s._busy = false; if (UI.sheet === s) renderSheet();
+  }
+
+  /* Пересчёт по этикетке: цифры «на 100 г» умножаются на вес порции.
+     Если цифр ещё нет, но есть фото — сначала считываем их с этикетки (ИИ), потом пересчитываем. */
+  function scaleLabel(s) {
+    var g = num(s.grams), k = g / 100;
+    var put = function (f, p) { var v = num(s[p]); s[f] = v == null ? '' : r1(v * k); };
+    put('kcal', 'p_kcal'); put('protein', 'p_protein'); put('fat', 'p_fat'); put('carbs', 'p_carbs');
+    s._note = 'Пересчитано на ' + r1(g) + ' г по этикетке (на 100 г: ' + [s.p_kcal ? s.p_kcal + ' ккал' : '', s.p_protein ? 'Б ' + s.p_protein : '', s.p_fat ? 'Ж ' + s.p_fat : '', s.p_carbs ? 'У ' + s.p_carbs : ''].filter(Boolean).join(', ') + ').';
+    s._err = '';
+  }
+  async function labelGo() {
+    var s = UI.sheet; if (!s || s._busy) return;
+    var haveNums = ['p_kcal', 'p_protein', 'p_fat', 'p_carbs'].some(function (f) { return num(s[f]) != null; });
+    var g = num(s.grams);
+    if (haveNums) {
+      if (g == null || g <= 0) { toast('Впиши вес порции в граммах'); return; }
+      scaleLabel(s); renderSheet(); return;
+    }
+    if (!s.photos.length) { toast('Добавь фото этикетки или впиши цифры на 100 г'); return; }
+    s._busy = true; s._err = ''; renderSheet();
+    try {
+      var images = [];
+      for (var i = 0; i < s.photos.length; i++) images.push({ media_type: 'image/jpeg', data: await blobB64(await photoBlob(s.photos[i])) });
+      var r = await callAI({ mode: 'label', images: images, text: '' });
+      if (UI.sheet !== s) return;
+      var p = r.per100 || {};
+      s.p_kcal = r1(p.kcal); s.p_protein = r1(p.protein); s.p_fat = r1(p.fat); s.p_carbs = r1(p.carbs);
+      s.ai = Object.assign({}, s.ai || {}, { label: r });
+      if (!s.title && r.name) s.title = r.name;
+      if (!['p_kcal', 'p_protein', 'p_fat', 'p_carbs'].some(function (f) { return s[f] !== ''; })) {
+        s._err = 'На фото не нашлась таблица пищевой ценности. ' + (r.notes || 'Сфотографируй её ближе и ровнее или впиши цифры вручную.');
+      } else if (g == null || g <= 0) {
+        s._note = 'Цифры с этикетки считаны (на 100 г)' + (r.serving_g ? '. Порция по упаковке: ' + r1(r.serving_g) + ' г' : '') + '. Проверь их, впиши вес порции и нажми «Пересчитать» ещё раз. ' + (r.notes || '');
+      } else { scaleLabel(s); if (r.notes) s._note += ' ' + r.notes; }
     } catch (e) { s._err = e.message || 'Не получилось'; }
     s._busy = false; if (UI.sheet === s) renderSheet();
   }
@@ -337,20 +375,28 @@
     h += field('title', 'Что это', s.title, 'placeholder="Например, гречка с курицей" autocomplete="off"');
     h += section('Фото еды или этикетки', photoBlock(s));
     if ((s.photos || []).length) {
-      h += field('hint', 'Подсказка для расчёта (необязательно)', s.hint || '', 'placeholder="Например: порция 250 г, или съел половину" autocomplete="off"');
-      h += '<button type="button" class="btn2" data-a="hAnalyze" data-v="food"' + (s._busy ? ' disabled' : '') + '>' + I('spark') + (s._busy ? 'Считаю…' : 'Посчитать по фото') + '</button>';
+      h += section('Готовое блюдо', field('hint', '', s.hint || '', 'placeholder="Подсказка: порция 250 г, съел половину…" aria-label="Подсказка для расчёта" autocomplete="off"') +
+        '<button type="button" class="btn2" style="margin-top:8px;width:100%" data-a="hAnalyze" data-v="food"' + (s._busy ? ' disabled' : '') + '>' + I('spark') + (s._busy ? 'Считаю…' : 'Оценить блюдо по фото') + '</button>');
     }
+    h += section('Этикетка: цифры на 100 г',
+      '<div class="row4">' + numField('p_kcal', 'Ккал', s.p_kcal) + numField('p_protein', 'Белки', s.p_protein) + numField('p_fat', 'Жиры', s.p_fat) + numField('p_carbs', 'Углев.', s.p_carbs) + '</div>' +
+      '<div style="margin-top:10px">' + numField('grams', 'Вес порции, г', s.grams) + '</div>' +
+      '<button type="button" class="btn2" style="margin-top:10px;width:100%" data-a="hLabel"' + (s._busy ? ' disabled' : '') + '>' + I('repeat') + (s._busy ? 'Считываю…' : 'Пересчитать по этикетке') + '</button>' +
+      '<div class="muted" style="font-size:13px;line-height:1.45;margin-top:8px">Сфотографируй этикетку, впиши вес порции и нажми «Пересчитать»: цифры на 100 г пересчитаются на твой вес. Цифры можно вписать и вручную.</div>');
     if (s._err) h += '<div class="herr">' + esc(s._err) + '</div>';
     if (s._note) h += '<div class="hnote">' + esc(s._note) + '</div>';
     if ((s.items || []).length) h += '<div class="fields">' + s.items.map(function (i) { return '<div class="fr"><span>' + esc(i.name) + (i.grams ? ', ' + Math.round(i.grams) + ' г' : '') + '</span><b style="font-weight:500">' + Math.round(i.kcal || 0) + ' ккал</b></div>'; }).join('') + '</div>';
-    h += '<div class="row2">' + numField('kcal', 'Ккал', s.kcal) + numField('grams', 'Вес, г', s.grams) + '</div>';
-    h += '<div class="row2">' + numField('protein', 'Белки, г', s.protein) + numField('fat', 'Жиры, г', s.fat) + numField('carbs', 'Углеводы, г', s.carbs) + '</div>';
+    h += section('Итого в порции', '<div class="row2">' + numField('kcal', 'Ккал', s.kcal) + '</div><div class="row3" style="margin-top:10px">' + numField('protein', 'Белки, г', s.protein) + numField('fat', 'Жиры, г', s.fat) + numField('carbs', 'Углеводы, г', s.carbs) + '</div>');
     h += field('note', 'Заметка', s.note, 'autocomplete="off"');
     return h;
   }
   function mealOpen(m, preset) {
-    var base = { type: 'h-meal', id: null, day: day(), at: '', kind: guessKind(), title: '', grams: '', kcal: '', protein: '', fat: '', carbs: '', note: '', photos: [], planned: false, _rm: [] };
-    if (m) base = Object.assign(base, { id: m.id, day: m.day, at: hm(m.at), kind: m.kind, title: m.title, grams: r1(m.grams), kcal: r1(m.kcal), protein: r1(m.protein), fat: r1(m.fat), carbs: r1(m.carbs), note: m.note || '', photos: (m.photos || []).slice(), planned: m.planned, task_id: m.task_id, ai: m.ai });
+    var base = { type: 'h-meal', id: null, day: day(), at: '', kind: guessKind(), title: '', grams: '', kcal: '', protein: '', fat: '', carbs: '', p_kcal: '', p_protein: '', p_fat: '', p_carbs: '', note: '', photos: [], planned: false, _rm: [] };
+    if (m) {
+      base = Object.assign(base, { id: m.id, day: m.day, at: hm(m.at), kind: m.kind, title: m.title, grams: r1(m.grams), kcal: r1(m.kcal), protein: r1(m.protein), fat: r1(m.fat), carbs: r1(m.carbs), note: m.note || '', photos: (m.photos || []).slice(), planned: m.planned, task_id: m.task_id, ai: m.ai });
+      var p100 = m.ai && m.ai.per100;   // цифры с этикетки сохраняются, чтобы пересчитать при правке веса
+      if (p100) Object.assign(base, { p_kcal: r1(p100.kcal), p_protein: r1(p100.protein), p_fat: r1(p100.fat), p_carbs: r1(p100.carbs) });
+    }
     if (preset) Object.assign(base, preset);
     UI.sheet = base; renderSheet(true);
   }
@@ -366,6 +412,8 @@
       grams: num(s.grams), kcal: num(s.kcal), protein: num(s.protein), fat: num(s.fat), carbs: num(s.carbs),
       note: s.note || '', photos: s.photos, planned: !!s.planned, ai: s.ai || null
     };
+    var per = { kcal: num(s.p_kcal), protein: num(s.p_protein), fat: num(s.p_fat), carbs: num(s.p_carbs) };
+    if (per.kcal != null || per.protein != null || per.fat != null || per.carbs != null) row.ai = Object.assign({}, row.ai || {}, { per100: per });
     try {
       if (s.planned) {
         var k = KIND[s.kind] || KIND.snack;
@@ -590,6 +638,7 @@
       renderSheet();
     },
     hAnalyze: function (v) { analyze(v); },
+    hLabel: function () { labelGo(); },
     hMetricDel: function (v) { var s = UI.sheet; if (s && s.metrics) { s.metrics.splice(+v, 1); renderSheet(); } },
     /* еда */
     hMealNew: function () { mealOpen(null, { day: day() }); },

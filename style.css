@@ -367,3 +367,9 @@ body.pc .composer{bottom:16px}
 .hing span.miss{background:transparent;border:1px dashed var(--warn);color:var(--warn)}
 .hrow.plan .tt{color:var(--muted)}
 .sb>*{flex-shrink:0}
+
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.row4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.row3 .fld,.row4 .fld{padding:0 10px;min-width:0}
+.hadd span{max-width:100%;line-height:1.2;overflow-wrap:anywhere}
+.hadd svg.i{width:22px;height:22px}
