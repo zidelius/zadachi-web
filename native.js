@@ -70,8 +70,9 @@
     var today = X.T(), tasks = [], habits = [], cal = [];
     var WDN = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'], MN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'], WS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
     function live(t) { return !(t.done || t.status === 'done' || t.status === 'archived'); }
-    function tk(t, over) { return { id: t.id, t: t.title, m: over ? 'просрочено' : (t.due_time || ''), o: !!over, rec: !!(t.recur && t.recur !== 'none'), lid: t.list_id || null, k: (over ? '0' : '1') + (t.due_time || '99') }; }
-    X.D.tasks.forEach(function (t) { if (!live(t) || !t.due_date || t.due_date > today) return; tasks.push(tk(t, t.due_date < today)); });
+    function tk(t, over) { var dn = !live(t); return { id: t.id, t: t.title, m: over && !dn ? 'просрочено' : (t.due_time || ''), o: !!over && !dn, d: dn, rec: !!(t.recur && t.recur !== 'none'), lid: t.list_id || null, k: (dn ? '2' : over ? '0' : '1') + (t.due_time || '99') }; }
+    function doneToday(t) { if (!t.done || !t.done_at) return false; var d = new Date(t.done_at); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2) === today; }
+    X.D.tasks.forEach(function (t) { if (live(t)) { if (!t.due_date || t.due_date > today) return; tasks.push(tk(t, t.due_date < today)); } else if (doneToday(t)) tasks.push(tk(t, false)); });
     tasks.sort(function (a, b) { return a.k < b.k ? -1 : a.k > b.k ? 1 : 0; });
     var hs = X.D.habits.slice(); if (window.WELL && WELL.habits) WELL.habits().forEach(function (h) { hs.push(h); });
     hs.forEach(function (h) { if (h.paused || h.finished || !X.sched(h, today)) return; habits.push({ id: h.id, t: h.name, m: h.remind || '', c: X.cnt(h, today), n: X.tgt(h) }); });
@@ -153,6 +154,7 @@
       for (var i = 0; i < ops.length; i++) {
         var op = ops[i], t = X.findTask && X.findTask(op.id);
         if (op.type === 'done' && t && !t.done) await X.completeTask(op.id);
+        else if (op.type === 'undo' && t && t.done) await X.reopenTask(op.id);
         else if (op.type === 'mark') { var hs = X.D.habits.concat((window.WELL && WELL.habits && WELL.habits()) || []), h = hs.filter(function (x) { return x.id === op.id; })[0]; if (h && X.cnt(h, X.T()) < X.tgt(h)) await X.setMark(h, X.T(), X.cnt(h, X.T()) + 1); }
         else if (op.type === 'open') {
           if (op.kind === 'task' && t) X.A.open(null, op.id);
