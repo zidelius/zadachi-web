@@ -414,3 +414,11 @@ body.pc .composer{bottom:16px}
 .hmc .hmn{flex-direction:column;gap:2px;font-size:13px;color:var(--muted);margin-bottom:6px}
 .hmc .hmn b{color:var(--ink);font-size:14px}
 .hmc .hbar{margin-top:0}
+
+/* прокрутка горизонтальных рядов мышью на компьютере */
+.tabs,.chipsrow,.habits{user-select:none;-webkit-user-select:none}
+body.pc .tabs,body.pc .chipsrow,body.pc .habits{scrollbar-width:thin;scrollbar-color:var(--faint) transparent;cursor:grab;padding-bottom:6px}
+body.pc .tabs::-webkit-scrollbar,body.pc .chipsrow::-webkit-scrollbar,body.pc .habits::-webkit-scrollbar{display:block;height:6px}
+body.pc .tabs::-webkit-scrollbar-thumb,body.pc .chipsrow::-webkit-scrollbar-thumb,body.pc .habits::-webkit-scrollbar-thumb{background:var(--faint);border-radius:3px}
+body.pc .tabs.dragging,body.pc .chipsrow.dragging,body.pc .habits.dragging{cursor:grabbing}
+.dragging *{pointer-events:none}

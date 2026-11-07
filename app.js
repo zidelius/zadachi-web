@@ -1135,6 +1135,31 @@ document.addEventListener('pointermove',function(e){
 document.addEventListener('pointerup',function(e){clearTimeout(lp);lp=null;
   if(sw){var dx=e.clientX-sw.x,dy=Math.abs(e.clientY-sw.y);sw.el.style.transform='';if(dx<-60&&dy<30){lpFired=true;UI.sheet={type:'move',id:sw.id};renderSheet(true);}sw=null;}},true);
 document.addEventListener('pointercancel',function(){clearTimeout(lp);lp=null;if(sw){sw.el.style.transform='';sw=null;}},true);
+
+/* Горизонтальные ряды (быстрые кнопки, вкладки, привычки): прокрутка мышью.
+   Колесо двигает ряд в сторону, пока есть что показывать; ряд можно тянуть мышью; снизу на компьютере видна тонкая полоса. */
+var STRIPS='.chipsrow,.tabs,.habits',strip=null;
+function stripOf(e){var el=e.target&&e.target.closest&&e.target.closest(STRIPS);return el&&el.scrollWidth>el.clientWidth+1?el:null;}
+document.addEventListener('wheel',function(e){
+  var el=stripOf(e);if(!el||Math.abs(e.deltaX)>Math.abs(e.deltaY))return;
+  var max=el.scrollWidth-el.clientWidth;
+  if((e.deltaY>0&&el.scrollLeft<max-1)||(e.deltaY<0&&el.scrollLeft>0)){el.scrollLeft+=e.deltaY;e.preventDefault();}
+},{passive:false});
+document.addEventListener('pointerdown',function(e){
+  if(e.pointerType!=='mouse'||e.button!==0)return;
+  var el=stripOf(e);if(el)strip={el:el,x:e.clientX,left:el.scrollLeft,moved:false};
+});
+document.addEventListener('pointermove',function(e){
+  if(!strip)return;var dx=e.clientX-strip.x;
+  if(!strip.moved&&Math.abs(dx)>5){strip.moved=true;strip.el.classList.add('dragging');clearTimeout(lp);lp=null;}
+  if(strip.moved)strip.el.scrollLeft=strip.left-dx;
+});
+function stripEnd(){
+  if(!strip)return;var s=strip;strip=null;s.el.classList.remove('dragging');
+  if(s.moved){var stop=function(ev){ev.stopPropagation();ev.preventDefault();};document.addEventListener('click',stop,true);setTimeout(function(){document.removeEventListener('click',stop,true);},0);}
+}
+document.addEventListener('pointerup',stripEnd,true);
+document.addEventListener('pointercancel',stripEnd,true);
 document.addEventListener('contextmenu',function(e){if(e.target.closest('.hab,.task'))e.preventDefault();});
 document.addEventListener('click',function(e){
   var el=e.target.closest('[data-a]');if(!el)return;var a=el.getAttribute('data-a');
