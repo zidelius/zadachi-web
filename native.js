@@ -2,7 +2,7 @@
 (function () {
   var C = window.Capacitor;
   if (!C || !C.isNativePlatform || !C.isNativePlatform()) return;
-  var LN = C.Plugins && C.Plugins.LocalNotifications;
+  var LN = (C.Plugins && C.Plugins.LocalNotifications) || (C.registerPlugin && C.registerPlugin('LocalNotifications'));
   if (!LN) return;
   var X = window.__app;
   function pad(n) { return (n < 10 ? '0' : '') + n; }
