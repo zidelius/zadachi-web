@@ -449,13 +449,13 @@ body.pc .tabs.dragging,body.pc .chipsrow.dragging,body.pc .habits.dragging{curso
 .dh{font-size:clamp(30px,9.5vw,40px)}
 .tbtns{margin-left:auto}
 
-/* ��������� �������� ���� */
+/* ��������� �������� ���� */
 .hload{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:11px;color:var(--muted);border:1.5px solid var(--faint)}
 .hload .spin{width:22px;height:22px;border-radius:50%;border:2.5px solid var(--faint);border-top-color:var(--ink,#141414);animation:hspin .8s linear infinite;display:block}
 .hph.sm.hload .spin{width:18px;height:18px}
 @keyframes hspin{to{transform:rotate(360deg)}}
 
-/* ��������� �� ����� ������ �� ���� ������ */
+/* ��������� �� ����� ������ �� ���� ������ */
 .calnav{flex-wrap:wrap}
 .calnav .pills{max-width:100%}
 .wrap,.main{min-width:0;max-width:100%}
@@ -493,3 +493,31 @@ html,body{overflow-x:hidden}
 .tbtns{display:flex;gap:8px;align-items:center;margin-left:auto}
 @media (max-width:420px){.top .btn2,.top .btn{min-height:40px;padding:7px 13px;font-size:14px}.top .hbell{padding:7px 11px}.tbtns{gap:6px}}
 .dh{font-size:clamp(26px,7.4vw,40px)}
+
+/* ===== правки по скринам с телефона ===== */
+.chipsrow.wrapit{flex-wrap:wrap;overflow:visible}
+.chipsrow.wrapit .fchip{flex-shrink:1;height:auto;min-height:36px;padding:6px 14px;white-space:normal;text-align:center}
+.tabs{gap:clamp(12px,4.2vw,22px)}
+.tabs button{font-size:clamp(13px,3.9vw,14px)}
+/* форма «название / количество / единица» не обрезает подсказки: название отдельной строкой */
+.qtyform{flex-wrap:wrap}
+.qtyform>.fld:first-child{flex:1 1 100%}
+.qtyform .hq{flex:1 1 90px}
+.qtyform .hu{flex:0 0 100px}
+.hadd-form .btn{flex:0 0 52px;min-height:50px}
+/* панель задачи: подпись не наезжает на значение, кнопки в один ряд */
+.fields .fr>span{flex:0 0 auto;margin-right:auto;white-space:nowrap}
+.fields .fr>b{flex:0 1 auto;max-width:64%;text-align:right}
+.sf .row2{display:flex;gap:10px;flex-wrap:nowrap}
+.sf .row2 .btn2{flex:1 1 0;min-width:0;padding:9px 10px}
+.sf .row2 .btn2.warn{flex:0 0 50px;padding:0}
+.sf{gap:8px;padding:10px 20px 12px}
+/* дневник */
+.drow{align-items:flex-start;padding:10px 0;gap:12px}
+.drow .b{margin-top:1px}
+.dt{flex:1;min-width:0}
+.dtx{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;text-align:left;line-height:1.4;font-size:15px;white-space:pre-line;overflow-wrap:anywhere;color:inherit;width:100%}
+.dtx.open{display:block}
+.dsubs{margin-top:6px;display:flex;flex-direction:column;gap:3px}
+.dsub{font-size:13px;color:var(--muted);line-height:1.35}
+.drow .at{padding-top:2px;flex-shrink:0}

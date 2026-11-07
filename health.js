@@ -1,4 +1,4 @@
-﻿/* Разделы «Питание» и «Тренировки».
+/* Разделы «Питание» и «Тренировки».
    Подключается после app.js и использует его функции (render, q, sb, createTask, toast и т. д.).
    Запланированные приёмы пищи и тренировки создают обычную задачу, поэтому работают напоминания,
    календарь и кнопки в уведомлениях. Отметка в любом из двух мест синхронизируется. */
@@ -389,7 +389,7 @@
   }
   function fridgeView() {
     var items = H.pantry.filter(function (p) { return p.kind === 'food'; });
-    var h = '<form class="hadd-form" autocomplete="off"><input class="fld" id="hp-name" placeholder="Продукт" aria-label="Продукт">' +
+    var h = '<form class="hadd-form qtyform" autocomplete="off"><input class="fld" id="hp-name" placeholder="Продукт" aria-label="Продукт">' +
       '<input class="fld hq" id="hp-qty" inputmode="decimal" placeholder="Кол-во" aria-label="Количество">' +
       '<select class="fld hu" id="hp-unit" aria-label="Единица">' + UNITS.map(function (u) { return '<option>' + u + '</option>'; }).join('') + '</select>' +
       '<button class="btn" type="submit" data-a="hPantryAdd" data-v="food" aria-label="Добавить">' + I('plus') + '</button></form>';

@@ -493,12 +493,12 @@ function calView(){
 }
 function diaryView(){
   var days={};
-  D.log.filter(function(l){return l.user_id===ME;}).forEach(function(l){(days[l.day]=days[l.day]||[]).push({t:l.title,at:new Date(l.created_at).toTimeString().slice(0,5)});});
+  D.log.filter(function(l){return l.user_id===ME;}).forEach(function(l){var tk=l.task_id&&findTask(l.task_id);(days[l.day]=days[l.day]||[]).push({id:l.id,t:l.title,at:new Date(l.created_at).toTimeString().slice(0,5),subs:tk&&tk.subs&&tk.subs.length?tk.subs:null});});
   D.habits.forEach(function(h){var m=D.marks[h.id]||{};Object.keys(m).forEach(function(d){if(m[d]>=tgt(h))(days[d]=days[d]||[]).push({t:h.name,at:'',c:h.color});});});
   var keys=Object.keys(days).sort().reverse();
   var h='<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">Дневник</h1></div></div>';
   if(!keys.length)return h+'<div class="empty">Здесь по дням будут выполненные задачи и привычки.</div>';
-  keys.slice(0,90).forEach(function(k){var d=diff(k,T());h+='<div class="dday">'+(d===0?'Сегодня':d===-1?'Вчера':fmtDM(k))+'</div>';days[k].forEach(function(x){h+='<div class="drow"><span class="b"'+(x.c?' style="background:'+esc(x.c)+'"':'')+'>'+I('check')+'</span>'+esc(x.t)+'<span class="at">'+x.at+'</span></div>';});});
+  keys.slice(0,90).forEach(function(k){var d=diff(k,T());h+='<div class="dday">'+(d===0?'Сегодня':d===-1?'Вчера':fmtDM(k))+'</div>';days[k].forEach(function(x){var open=x.id&&UI.dopen===x.id;h+='<div class="drow"><span class="b"'+(x.c?' style="background:'+esc(x.c)+'"':'')+'>'+I('check')+'</span><div class="dt"><button type="button" class="dtx'+(open?' open':'')+'" data-a="dTog" data-v="'+(x.id||'')+'">'+esc(x.t)+'</button>'+(x.subs?'<div class="dsubs">'+x.subs.map(function(s){return '<div class="dsub'+(s.done?' done':'')+'">'+(s.done?'✓':'○')+' '+esc(s.t)+'</div>';}).join('')+'</div>':'')+'</div><span class="at">'+x.at+'</span></div>';});});
   return h;
 }
 function habitsView(){
@@ -670,9 +670,10 @@ function taskDetail(t){
   if(t.assignee&&t.assignee!==ME)rows.push(['send','Кому',pname(t.assignee)+' · '+(t.status==='pending'?'ждёт ответа':t.status==='declined'?'отклонено':'принято')]);
   var subs=t.subs||[];
   var h='<div style="display:flex;gap:12px;align-items:flex-start"><button class="chk'+(t.done?' on':'')+'" data-a="chk" data-id="'+t.id+'" aria-label="Выполнено"><span>'+(t.done?I('check'):'')+'</span></button><div style="font-size:21px;font-weight:600;line-height:1.3">'+esc(t.title)+'</div></div>';
-  h+='<div class="fields">'+rows.map(function(r){return '<div class="fr">'+I(r[0])+'<span>'+r[1]+'</span><b style="font-weight:500;text-align:right">'+esc(r[2])+'</b></div>';}).join('')+'</div>';
-  if(t.details)h+='<div style="white-space:pre-line;line-height:1.5">'+esc(t.details)+'</div>';
-  h+='<div><div class="gl">Подзадачи'+(subs.length?' · '+subs.filter(function(s){return s.done;}).length+' из '+subs.length:'')+'</div><div class="subs">'+subs.map(function(s){return '<div class="si'+(s.done?' done':'')+'"><button class="sbox'+(s.done?' on':'')+'" data-a="subChk" data-id="'+t.id+'" data-v="'+s.id+'" aria-label="'+esc(s.t)+'">'+(s.done?I('check'):'')+'</button><span>'+esc(s.t)+'</span><button class="x" data-a="subDel" data-id="'+t.id+'" data-v="'+s.id+'" aria-label="Удалить пункт">'+I('x')+'</button></div>';}).join('')+'</div><form class="inrow" data-subform="'+t.id+'" style="margin-top:6px"><input class="fld" name="s" placeholder="Добавить пункт" aria-label="Новый пункт"><button class="btn" aria-label="Добавить пункт">'+I('plus')+'</button></form></div>';
+  var hf='<div class="fields">'+rows.map(function(r){return '<div class="fr">'+I(r[0])+'<span>'+r[1]+'</span><b style="font-weight:500;text-align:right">'+esc(r[2])+'</b></div>';}).join('')+'</div>';
+  var hd='';if(t.details)hd='<div style="white-space:pre-line;line-height:1.5">'+esc(t.details)+'</div>';
+  var hsub='<div><div class="gl">Подзадачи'+(subs.length?' · '+subs.filter(function(s){return s.done;}).length+' из '+subs.length:'')+'</div><div class="subs">'+subs.map(function(s){return '<div class="si'+(s.done?' done':'')+'"><button class="sbox'+(s.done?' on':'')+'" data-a="subChk" data-id="'+t.id+'" data-v="'+s.id+'" aria-label="'+esc(s.t)+'">'+(s.done?I('check'):'')+'</button><span>'+esc(s.t)+'</span><button class="x" data-a="subDel" data-id="'+t.id+'" data-v="'+s.id+'" aria-label="Удалить пункт">'+I('x')+'</button></div>';}).join('')+'</div><form class="inrow" data-subform="'+t.id+'" style="margin-top:6px"><input class="fld" name="s" placeholder="Добавить пункт" aria-label="Новый пункт"><button class="btn" aria-label="Добавить пункт">'+I('plus')+'</button></form></div>';
+  h+=hsub+hf+hd;
   var cm=D.comments[t.id];
   h+='<div><div class="gl">Комментарии</div>'+(cm?cm.map(function(c){return '<div class="cmt" style="margin-bottom:10px"><span class="av">'+esc(pname(c.user_id).slice(0,1))+'</span><div><small>'+esc(pname(c.user_id))+' · '+new Date(c.created_at).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+'</small><br>'+esc(c.body)+'</div></div>';}).join('')||'<div class="muted" style="font-size:14px;margin-bottom:8px">Пока нет</div>':'<div class="muted" style="font-size:14px">Загружаю…</div>')+'<form class="inrow" data-cform="'+t.id+'"><input class="fld" name="c" placeholder="Написать комментарий" aria-label="Комментарий"><button class="btn" aria-label="Отправить комментарий">'+I('send')+'</button></form></div>';
   if(!cm)loadComments(t.id);
@@ -1037,6 +1038,7 @@ var A={
   hwk:function(v){var n=(UI.sheet.off||0)+(+v);if(n>0)return;UI.sheet.off=n;renderSheet();},
   habPause:async function(v,id){var h=findHabit(id);h.paused=!h.paused;renderSheet();render();try{await q(sb.from('habits').update({paused:h.paused}).eq('id',id));}catch(e){err(e);}},
   habFinish:async function(v,id){var h=findHabit(id);if(!confirm('Завершить привычку «'+h.name+'»? Она уйдёт из списка, отметки останутся в дневнике.'))return;h.finished=true;closeSheet();render();try{await q(sb.from('habits').update({finished:true}).eq('id',id));}catch(e){err(e);}},
+  dTog:function(v){UI.dopen=UI.dopen===v?null:v;render();},
   habEdit:function(v,id){var h=findHabit(id),ds=h.days||[],wk=ds.length===5&&ds.indexOf(5)<0&&ds.indexOf(6)<0;UI.sheet={type:'habit-edit',id:id,name:h.name,icon:h.icon,color:h.color,target:h.target,dmode:!ds.length?'all':wk?'wk':'pick',days:ds.slice(),remind:h.remind,times:[h.remind].concat(h.remind_at||[]).filter(Boolean),remind_every:h.remind_every||0};renderSheet(true);},
   habDel:async function(v,id){if(!confirm('Удалить привычку вместе со всеми отметками?'))return;D.habits=D.habits.filter(function(h){return h.id!==id;});closeSheet();render();try{await q(sb.from('habits').delete().eq('id',id));toast('Привычка удалена');}catch(e){err(e);}},
   saveHabit:async function(){var s=UI.sheet;if(!s.name||!s.name.trim()){toast('Напиши название');return;}

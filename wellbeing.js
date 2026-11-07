@@ -1,4 +1,4 @@
-﻿/* Раздел «Здоровье»: аптечка и БАДы, приём и расписания, нутриенты, анализы.
+/* Раздел «Здоровье»: аптечка и БАДы, приём и расписания, нутриенты, анализы.
    Подключается после health.js. Расписания приёма и повторяющиеся напоминания о еде и тренировках
    построены на привычках (habits): они дают время, дни недели, повторы и кнопку «Отметить» прямо в уведомлении.
    Справка, а не врач: приложение ничего не назначает. */
@@ -234,12 +234,12 @@
   }
   function cabView() {
     var kind = WUI.cab, items = W.cabinet.filter(function (c) { return c.kind === kind; });
-    var h = '<div class="chipsrow"><button class="fchip' + (kind === 'med' ? ' on' : '') + '" data-a="wCabKind" data-v="med">' + I('pill') + 'Лекарства (' + W.cabinet.filter(function (c) { return c.kind === 'med'; }).length + ')</button><button class="fchip' + (kind === 'supp' ? ' on' : '') + '" data-a="wCabKind" data-v="supp">' + I('leaf') + 'БАДы и витамины (' + W.cabinet.filter(function (c) { return c.kind === 'supp'; }).length + ')</button></div>';
+    var h = '<div class="chipsrow wrapit"><button class="fchip' + (kind === 'med' ? ' on' : '') + '" data-a="wCabKind" data-v="med">' + I('pill') + 'Лекарства (' + W.cabinet.filter(function (c) { return c.kind === 'med'; }).length + ')</button><button class="fchip' + (kind === 'supp' ? ' on' : '') + '" data-a="wCabKind" data-v="supp">' + I('leaf') + 'БАДы и витамины (' + W.cabinet.filter(function (c) { return c.kind === 'supp'; }).length + ')</button></div>';
     h += '<div style="display:flex;flex-direction:column;gap:18px;margin-top:6px">';
     h += section('Что подойдёт?', '<div class="muted" style="font-size:13px;line-height:1.45;margin-bottom:8px">Помощник посмотрит вашу аптечку и подскажет, что из неё обычно применяют при этих жалобах. Это справка, не замена врача.</div><div class="chips">' +
       SYMPTOMS.map(function (s) { return '<button class="chip" data-a="wAsk" data-v="' + esc(s) + '">' + esc(s) + '</button>'; }).join('') + '</div>' +
       '<form class="hadd-form" style="margin-top:10px" autocomplete="off"><input class="fld" id="w-sym" placeholder="Опишите, что беспокоит" aria-label="Симптомы"><button class="btn" type="submit" data-a="wAskText" aria-label="Спросить помощника">' + I('send') + '</button></form>');
-    h += '<form class="hadd-form" style="margin:0" autocomplete="off"><input class="fld" id="wc-name" placeholder="' + (kind === 'med' ? 'Лекарство' : 'БАД или витамин') + '" aria-label="Название"><input class="fld hq" id="wc-qty" inputmode="decimal" placeholder="Кол-во" aria-label="Количество"><select class="fld hu" id="wc-unit" aria-label="Единица">' + UNITS.map(function (u) { return '<option>' + u + '</option>'; }).join('') + '</select><button class="btn" type="submit" data-a="wCabAdd" aria-label="Добавить">' + I('plus') + '</button></form>';
+    h += '<form class="hadd-form qtyform" style="margin:0" autocomplete="off"><input class="fld" id="wc-name" placeholder="' + (kind === 'med' ? 'Лекарство' : 'БАД или витамин') + '" aria-label="Название"><input class="fld hq" id="wc-qty" inputmode="decimal" placeholder="Кол-во" aria-label="Количество"><select class="fld hu" id="wc-unit" aria-label="Единица">' + UNITS.map(function (u) { return '<option>' + u + '</option>'; }).join('') + '</select><button class="btn" type="submit" data-a="wCabAdd" aria-label="Добавить">' + I('plus') + '</button></form>';
     h += '</div>';
     h += '<button class="btn2" style="width:100%;margin-top:10px" data-a="wItemNew" data-v="photo">' + CAM + 'Добавить по фото упаковки</button>';
     if (!items.length) return h + '<div class="empty">' + (kind === 'med' ? 'Аптечка пуста. Добавьте лекарства, которые у вас есть, и помощник сможет подсказывать, что из них подойдёт.' : 'Здесь пока нет БАДов и витаминов. По фото упаковки состав считается сам, и он попадёт в расчёт нутриентов.') + '</div>' + disclaimer();

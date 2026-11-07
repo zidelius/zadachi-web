@@ -2,8 +2,16 @@
 (function () {
   var C = window.Capacitor;
   if (!C || !C.isNativePlatform || !C.isNativePlatform()) return;
-  var LN = (C.Plugins && C.Plugins.LocalNotifications) || (C.registerPlugin && C.registerPlugin('LocalNotifications'));
-  if (!LN) return;
+  /* страница грузится с сайта, поэтому готовых оболочек плагинов нет: говорим с Android напрямую через мост Capacitor */
+  function plug(name) {
+    return new Proxy({}, { get: function (_, m) {
+      if (m === 'then') return undefined;
+      if (m === 'addListener') return function (ev, cb) { return Promise.resolve(C.addListener(name, ev, cb)); };
+      return function (o) { return C.nativePromise(name, m, o || {}); };
+    } });
+  }
+  if (!C.nativePromise) return;
+  var LN = plug('LocalNotifications');
   var X = window.__app;
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function toMin(s) { var m = /^(\d{1,2}):(\d{2})/.exec(s || ''); return m ? (+m[1]) * 60 + (+m[2]) : null; }
@@ -57,7 +65,7 @@
   }
 
   /* виджет рабочего стола: дела на сегодня и просроченные + привычки на сегодня */
-  var WB = C.registerPlugin ? C.registerPlugin('WidgetBridge') : null, wSig = '';
+  var WB = plug('WidgetBridge'), wSig = '';
   function widgetData() {
     var today = X.T(), items = [];
     X.D.tasks.forEach(function (t) {
@@ -111,8 +119,7 @@
     catch (e) { X.toast('Ошибка: ' + (e && e.message || e)); }
   };
   function setupBack() {
-    var APP = (C.Plugins && C.Plugins.App) || (C.registerPlugin && C.registerPlugin('App'));
-    if (!APP || !APP.addListener) { ST.back = 'плагин App не найден'; return; }
+    var APP = plug('App');
     APP.addListener('backButton', function () {
       if (X.UI.sheet) { X.closeSheet(); return; }
       if (X.UI.sel) { X.UI.sel = null; X.render(); return; }
