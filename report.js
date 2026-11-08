@@ -331,12 +331,15 @@
     }));
     var bc = bodyCard(bodyIn(d, d), true); if (bc) cards.push(bc);
     var dd = fromKey(d);
-    return compose('ОТЧЁТ ЗА ДЕНЬ', dm(d), wdLong(d).replace(/^./, function (c) { return c.toUpperCase(); }) + ', ' + dd.getFullYear(), [
+    return compose('ОТЧЁТ ЗА ДЕНЬ', dm(d), wdLong(d).replace(/^./, function (c) { return c.toUpperCase(); }) + ', ' + dd.getFullYear(), [[
       ['Съедено', n0(t.kcal), gl.kcal ? 'из ' + n0(gl.kcal) + ' ккал' : 'ккал', C.ink],
       ['Белки', n0(t.protein), gl.p ? 'из ' + n0(gl.p) + ' г' : 'грамм', C.prot],
+      ['Жиры', n0(t.fat), gl.f ? 'из ' + n0(gl.f) + ' г' : 'грамм', C.fat],
+      ['Углеводы', n0(t.carbs), gl.c ? 'из ' + n0(gl.c) + ' г' : 'грамм', C.carb]
+    ], [
       ['Тренировки', String(ws.length), mins ? Math.round(mins) + ' мин' : plural(ws.length, 'тренировка', 'тренировки', 'тренировок'), C.carb],
       ['Сожжено', n0(burned), 'ккал на тренировках', C.fat]
-    ], cards);
+    ]], cards);
   }
 
   /* ---------- отчёт за неделю ---------- */
@@ -441,21 +444,26 @@
     var bc = bodyCard(bodyIn(from, to), false); if (bc) cards.push(bc);
     var fd = fromKey(from), td = fromKey(to);
     var range = fd.getMonth() === td.getMonth() ? fd.getDate() + '–' + dm(to) : dm(from) + ' – ' + dm(to);
-    return compose('ОТЧЁТ ЗА НЕДЕЛЮ', range, 'Понедельник – воскресенье, ' + td.getFullYear(), [
+    return compose('ОТЧЁТ ЗА НЕДЕЛЮ', range, 'Понедельник – воскресенье, ' + td.getFullYear(), [[
       ['Калории', n0(avg.kcal), gl.kcal ? 'в день, цель ' + n0(gl.kcal) : 'ккал в день', C.ink],
       ['Белки', n0(avg.p), gl.p ? 'г в день, цель ' + n0(gl.p) : 'г в день', C.prot],
+      ['Жиры', n0(avg.f), gl.f ? 'г в день, цель ' + n0(gl.f) : 'г в день', C.fat],
+      ['Углеводы', n0(avg.c), gl.c ? 'г в день, цель ' + n0(gl.c) : 'г в день', C.carb]
+    ], [
       ['Тренировки', String(ws.length), mins ? Math.round(mins) + ' мин' : plural(ws.length, 'тренировка', 'тренировки', 'тренировок'), C.carb],
       ton ? ['Поднято', n1(ton / 1000), 'тонн за неделю', C.fat] : ['Сожжено', n0(burned), 'ккал на тренировках', C.fat]
-    ], cards);
+    ]], cards);
   }
 
   /* ---------- сборка картинки ---------- */
   function compose(kind, l1, l2, tl, cards) {
-    var H0 = 300 + 40 + 170 + 36, total = H0 + cards.reduce(function (a, b) { return a + b.h + 2 * P + 28; }, 0) + 90;
+    var rows = Array.isArray(tl[0]) ? tl : [tl];
+    var H0 = 300 + 40 + rows.length * 170 + (rows.length - 1) * 16 + 36, total = H0 + cards.reduce(function (a, b) { return a + b.h + 2 * P + 28; }, 0) + 90;
     var c = canvas(W, total), g = c.getContext('2d');
     g.fillStyle = C.bg; g.fillRect(0, 0, W, total);
     header(g, kind, l1, l2);
-    var y = tiles(g, 300 + 40 - 0, tl) + 36;
+    var y = 300 + 40;
+    rows.forEach(function (r, i) { y = tiles(g, y, r) + (i < rows.length - 1 ? 16 : 36); });
     cards.forEach(function (b) {
       g.save(); g.shadowColor = 'rgba(20,20,20,0.07)'; g.shadowBlur = 30; g.shadowOffsetY = 8; fillR(g, M, y, W - 2 * M, b.h + 2 * P, 32, C.card); g.restore();
       g.drawImage(b.c, 0, 0, CW, b.h, M + P, y + P, CW, b.h);
