@@ -612,3 +612,35 @@ body.pc .habhead .habdays{margin-left:auto}
 body.pc .habhead span{width:28px;text-align:center;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;flex-direction:column;gap:2px;line-height:1.1}
 body.pc .habhead span b{font-size:13px;color:var(--ink);font-weight:600;letter-spacing:0}
 body.pc .habhead span.now b{color:var(--acc)}
+
+/* отчёт: превью картинки */
+.rprev{margin-top:4px;border-radius:12px;overflow:hidden;background:var(--soft);max-height:62vh;overflow-y:auto}
+.rprev img{display:block;width:100%;height:auto}
+.rprev .empty{padding:40px 16px}
+
+/* вложения в заметках */
+.nfiles{display:flex;flex-direction:column;gap:8px;margin:4px 0 10px}
+.nfgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.nfimg{aspect-ratio:1;border-radius:12px;overflow:hidden;background:var(--soft);padding:0;border:0}
+.nfimg img{width:100%;height:100%;object-fit:cover;display:block}
+.nfimg img.bad{opacity:.2}
+.nfdoc{display:flex;align-items:center;gap:12px;text-align:left;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surf);width:100%}
+.nfdoc .i{width:26px;height:26px;flex:none}
+.nfdoc span{display:flex;flex-direction:column;min-width:0}
+.nfdoc b{font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nfdoc small{color:var(--muted);font-size:12px}
+.nfup{font-size:13px}
+.badge.nfb{display:inline-flex;align-items:center;gap:3px}.badge.nfb .i{width:13px;height:13px}
+.editor.nfdrag{outline:3px dashed var(--muted);outline-offset:-10px}
+.nfview{position:fixed;inset:0;z-index:60;background:rgba(10,10,10,.94);color:#fff;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.nfvbar{display:flex;align-items:center;gap:10px;padding:8px 12px}
+.nfvbar .iconbtn{color:#fff}
+.nfvbar b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.nfvbar small{opacity:.6}
+.nfvbody{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:8px}
+.nfvbody img{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px}
+.nfvdoc{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;padding:20px}
+.nfvdoc .i{width:64px;height:64px}
+.nfvdoc .muted{color:rgba(255,255,255,.6)}
+.nfvfoot{display:flex;gap:8px;padding:12px;flex-wrap:wrap;justify-content:center}
+.nfvfoot .btn,.nfvfoot .btn2{flex:1 1 140px;max-width:260px}

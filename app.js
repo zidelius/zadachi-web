@@ -546,7 +546,7 @@ function notesList(){
   var qq=UI.q.trim().toLowerCase(),t=T(),has=D.notes.some(function(n){return n.daily===t&&n.owner===ME;});
   var ns=D.notes.filter(function(n){return !qq||(n.title+' '+n.body).toLowerCase().indexOf(qq)>=0;}).sort(function(a,b){return a.updated_at<b.updated_at?1:-1;});
   var h=qq?'':'<button class="daily" data-a="daily">'+I('edit')+'<span><b>'+(has?'Открыть заметку дня':'Заметка на сегодня')+'</b><small>'+fmtLong(t)+'</small></span></button>';
-  ns.forEach(function(n){var shr=n.owner!==ME?' <span class="badge">от '+esc(pname(n.owner))+'</span>':noteMembers(n.id).length?' <span class="badge">общая</span>':'';h+='<button class="note" data-a="noteOpen" data-id="'+n.id+'"><b>'+esc(n.title||'Без названия')+(n.daily?' <span class="badge">день</span>':'')+shr+'</b><p>'+esc((n.body||'').trim()||'Пусто')+'</p></button>';});
+  ns.forEach(function(n){var shr=n.owner!==ME?' <span class="badge">от '+esc(pname(n.owner))+'</span>':noteMembers(n.id).length?' <span class="badge">общая</span>':'';var nfc=window.NOTEFILES?NOTEFILES.count(n):0;h+='<button class="note" data-a="noteOpen" data-id="'+n.id+'"><b>'+esc(n.title||'Без названия')+(n.daily?' <span class="badge">день</span>':'')+shr+(nfc?' <span class="badge nfb">'+NOTEFILES.clip+nfc+'</span>':'')+'</b><p>'+esc((n.body||'').trim()||'Пусто')+'</p></button>';});
   if(!ns.length)h+='<div class="empty">'+(qq?'Ничего не нашлось.':'Заметок пока нет.')+'</div>';
   return h;
 }
@@ -1104,7 +1104,7 @@ var A={
   noteBack:function(){closeNote();},
   noteTask:function(){var n=findNote(UI.noteId);openAdd(n?n.title:'',{details:n?n.body:''});},
   noteDel:async function(){var n=findNote(UI.noteId);if(n.owner!==ME){if(!confirm('Убрать эту заметку у себя? У автора она останется.'))return;D.notes=D.notes.filter(function(x){return x!==n;});UI.noteId=null;renderNote();render();try{await q(sb.from('note_members').delete().eq('note_id',n.id).eq('user_id',ME));D.nmembers=D.nmembers.filter(function(m){return !(m.note_id===n.id&&m.user_id===ME);});}catch(e){err(e);}return;}
-    if(!confirm(noteMembers(n.id).length?'Удалить заметку? Она пропадёт и у тех, с кем ты ею поделился.':'Удалить заметку?'))return;D.notes=D.notes.filter(function(x){return x!==n;});UI.noteId=null;renderNote();render();try{await q(sb.from('notes').delete().eq('id',n.id));}catch(e){err(e);}},
+    if(!confirm(noteMembers(n.id).length?'Удалить заметку? Она пропадёт и у тех, с кем ты ею поделился.':'Удалить заметку?'))return;D.notes=D.notes.filter(function(x){return x!==n;});UI.noteId=null;renderNote();render();try{if(window.NOTEFILES)await NOTEFILES.purge(n);await q(sb.from('notes').delete().eq('id',n.id));}catch(e){err(e);}},
   noteShare:function(){var n=findNote(UI.noteId);UI.sheet={type:'note-share',id:n.id,members:noteMembers(n.id)};renderSheet(true);},
   nmember:function(v){var a=UI.sheet.members,i=a.indexOf(v);if(i>=0)a.splice(i,1);else a.push(v);renderSheet();},
   saveNoteShare:async function(){var s=UI.sheet,n=findNote(s.id);if(!n)return closeSheet();
@@ -1154,15 +1154,16 @@ function renderNote(){
   var root=document.getElementById('note'),n=UI.noteId&&findNote(UI.noteId);
   if(!n){root.innerHTML='';return;}
   var mine=n.owner===ME,nm=noteMembers(n.id),info=[];if(n.daily)info.push('Заметка дня');if(!mine)info.push('от '+pname(n.owner)+', общая');else if(nm.length)info.push('общая с '+nm.map(pname).join(', '));
-  root.innerHTML='<div class="editor"><div class="bar"><button class="iconbtn" data-a="noteBack" aria-label="Назад">'+I('left')+'</button><span class="sp"></span>'+(mine&&others().length?'<button class="btn2" data-a="noteShare">'+I('users')+'Поделиться</button>':'')+'<button class="btn2" data-a="noteAsk">'+I('spark')+'Разобрать</button><button class="btn2" data-a="noteTask">'+I('tasks')+'Задача</button><button class="iconbtn" data-a="noteDel" aria-label="'+(mine?'Удалить заметку':'Убрать у себя')+'">'+I(mine?'trash':'out')+'</button></div><div class="body">'+(info.length?'<div class="muted" style="font-size:13px">'+esc(info.join(' · '))+'</div>':'')+'<input id="nt" placeholder="Название" aria-label="Название заметки" value="'+esc(n.title)+'"><textarea id="nb" placeholder="Текст заметки" aria-label="Текст заметки">'+esc(n.body)+'</textarea></div></div>';
+  root.innerHTML='<div class="editor"><div class="bar"><button class="iconbtn" data-a="noteBack" aria-label="Назад">'+I('left')+'</button><span class="sp"></span>'+(mine&&others().length?'<button class="btn2" data-a="noteShare">'+I('users')+'Поделиться</button>':'')+'<button class="btn2" data-a="noteAsk">'+I('spark')+'Разобрать</button><button class="btn2" data-a="noteTask">'+I('tasks')+'Задача</button>'+(window.NOTEFILES?NOTEFILES.button():'')+'<button class="iconbtn" data-a="noteDel" aria-label="'+(mine?'Удалить заметку':'Убрать у себя')+'">'+I(mine?'trash':'out')+'</button></div><div class="body">'+(info.length?'<div class="muted" style="font-size:13px">'+esc(info.join(' · '))+'</div>':'')+'<input id="nt" placeholder="Название" aria-label="Название заметки" value="'+esc(n.title)+'">'+(window.NOTEFILES?NOTEFILES.block(n):'')+'<textarea id="nb" placeholder="Текст заметки" aria-label="Текст заметки">'+esc(n.body)+'</textarea></div></div>';
   var ti=root.querySelector('#nt'),bo=root.querySelector('#nb');
   function upd(){n.title=ti.value;n.body=bo.value;n.updated_at=new Date().toISOString();clearTimeout(noteTimer);noteTimer=setTimeout(function(){saveNote(n);},600);}
   ti.addEventListener('input',upd);bo.addEventListener('input',upd);
-  if(!n.title&&!n.body)setTimeout(function(){ti.focus();},150);
+  if(window.NOTEFILES)NOTEFILES.after();
+  if(!n.title&&!n.body&&!(window.NOTEFILES&&NOTEFILES.has(n)))setTimeout(function(){ti.focus();},150);
 }
 function saveNote(n){return q(sb.from('notes').update({title:n.title,body:n.body}).eq('id',n.id)).catch(err);}
 async function closeNote(){var n=findNote(UI.noteId);clearTimeout(noteTimer);UI.noteId=null;renderNote();
-  if(n){if(n.owner===ME&&!n.title.trim()&&!n.body.trim()&&!noteMembers(n.id).length){D.notes=D.notes.filter(function(x){return x!==n;});q(sb.from('notes').delete().eq('id',n.id)).catch(function(){});}else saveNote(n);}
+  if(n){if(n.owner===ME&&!n.title.trim()&&!n.body.trim()&&!noteMembers(n.id).length&&!(window.NOTEFILES&&NOTEFILES.has(n))){D.notes=D.notes.filter(function(x){return x!==n;});q(sb.from('notes').delete().eq('id',n.id)).catch(function(){});}else saveNote(n);}
   render();}
 
 /* =================== События =================== */

@@ -326,10 +326,11 @@
     return t;
   }
   /* повторяющиеся напоминания (каждый день в 8:30 и т. п.): живут в разделе «Здоровье» (wellbeing.js) */
+  function repBtn(v) { return window.HREPORT ? '<button class="btn2 hbell" data-a="hReport" data-v="' + v + '" aria-label="Отчёт" title="Отчёт">' + window.HREPORT.icon + '</button>' : ''; }
   function bellBtn(kind) { return window.WELL ? '<button class="btn2 hbell" data-a="wPlans" data-v="' + kind + '" aria-label="Напоминания">' + I('bell') + '</button>' : ''; }
   function foodView() {
     var d = day(), h = '<div class="top"><div><div class="date">' + fmtLong(T()) + '</div><h1 class="dh">Питание</h1></div>' +
-      '<div class="tbtns">' + bellBtn('meal') + (HUI.foodTab === 'day' ? '<button class="btn2" data-a="hMealNew">' + I('plus') + 'Добавить</button>' : '') + '</div></div>';
+      '<div class="tbtns">' + repBtn('day') + bellBtn('meal') + (HUI.foodTab === 'day' ? '<button class="btn2" data-a="hMealNew">' + I('plus') + 'Добавить</button>' : '') + '</div></div>';
     h += tabs([['day', 'День'], ['kitchen', 'Кухня']], HUI.foodTab, 'hFoodTab');
     if (!H.ok) return h + notReady();
     return h + (HUI.foodTab === 'day' ? foodDay(d) : kitchenView());
@@ -580,7 +581,7 @@
 
   /* =================== ТРЕНИРОВКИ =================== */
   function fitView() {
-    var h = '<div class="top"><div><div class="date">' + fmtLong(T()) + '</div><h1 class="dh">Тренировки</h1></div><div class="tbtns">' + bellBtn('workout') + '<button class="btn2" data-a="' + (HUI.fitTab === 'body' ? 'hBodyNew' : 'hWorkNew') + '">' + I('plus') + (HUI.fitTab === 'body' ? 'Замер' : 'Добавить') + '</button></div></div>';
+    var h = '<div class="top"><div><div class="date">' + fmtLong(T()) + '</div><h1 class="dh">Тренировки</h1></div><div class="tbtns">' + repBtn('week') + bellBtn('workout') + '<button class="btn2" data-a="' + (HUI.fitTab === 'body' ? 'hBodyNew' : 'hWorkNew') + '">' + I('plus') + (HUI.fitTab === 'body' ? 'Замер' : 'Добавить') + '</button></div></div>';
     h += tabs([['log', 'Тренировки'], ['load', 'Нагрузка'], ['prog', 'Прогресс'], ['body', 'Замеры']], HUI.fitTab, 'hFitTab');
     if (!H.ok) return h + notReady();
     return h + (HUI.fitTab === 'log' ? workLog() : HUI.fitTab === 'load' ? loadView() : HUI.fitTab === 'prog' ? progView() : bodyView());
@@ -928,6 +929,7 @@
       case 'h-meal': return { title: s.id ? 'Приём пищи' : (s.planned ? 'Запланировать еду' : 'Записать еду'), body: mealSheet(s), foot: '<button class="btn" data-a="hMealSave">' + (s.id ? 'Сохранить' : (s.planned ? 'Запланировать' : 'Записать')) + '</button>' + (s.id ? '<button class="btn2 warn" data-a="hMealDel">Удалить</button>' : '') };
       case 'h-work': return { title: s.id ? 'Тренировка' : (s.planned ? 'Запланировать тренировку' : 'Записать тренировку'), body: workSheet(s), foot: '<button class="btn" data-a="hWorkSave">' + (s.id ? 'Сохранить' : (s.planned ? 'Запланировать' : 'Записать')) + '</button>' + (s.id ? '<button class="btn2 warn" data-a="hWorkDel">Удалить</button>' : '') };
       case 'h-body': return { title: s.id ? 'Замер' : 'Новый замер', body: bodySheet(s), foot: '<button class="btn" data-a="hBodySave">Сохранить</button>' + (s.id ? '<button class="btn2 warn" data-a="hBodyDel">Удалить</button>' : '') };
+      case 'h-report': return window.HREPORT ? window.HREPORT.sheet(s) : { title: 'Отчёт', body: '', foot: '' };
       case 'h-recipe': return { title: 'Что приготовить', body: recipeSheet(s), foot: '' };
       case 'h-prog': return { title: (progressData()[s.key] || {}).name || 'Упражнение', body: progSheet(s), foot: '' };
       case 'h-pantry': return { title: 'Продукт', body: field('name', 'Название', s.name) + '<div class="row2">' + numField('qty', 'Количество', s.qty) + '<label><div class="gl">Единица</div><select class="fld" data-f="unit">' + UNITS.map(function (u) { return '<option' + (u === s.unit ? ' selected' : '') + '>' + u + '</option>'; }).join('') + '</select></label></div><label><div class="gl">Годен до</div><input class="fld" type="date" data-f="expires" value="' + esc(s.expires || '') + '"></label>', foot: '<button class="btn" data-a="hPantrySave">Сохранить</button>' };
@@ -1246,6 +1248,9 @@
   window.HEALTH = {
     load: load, foodView: foodView, fitView: fitView, sheet: sheet,
     asAttach: asAttach, asPending: asPending, asPendingPaths: function () { return PEND.slice(); }, asUploading: function () { return PEND_UP > 0; },
+    /* для отчёта (report.js) */
+    r: { H: H, isDone: isDone, mealsOf: mealsOf, totals: totals, loadOf: loadOf, workingSets: workingSets, summarizeSets: summarizeSets, heat: heat,
+      normName: normName, KIND: KIND, FKIND: FKIND, MUS: MUS, TARGET: TARGET, photoBlob: photoBlob, num: num, hm: hm, day: day },
     asTake: function () { var p = PEND; PEND = []; return p; }, asPhotos: asPhotos, asImages: asImages, asEntries: asEntries, asCards: asCards, asSummary: asSummary,
     /* утилиты для раздела «Здоровье» (wellbeing.js) */
     u: {
