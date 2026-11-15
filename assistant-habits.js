@@ -3,16 +3,16 @@
 (function () {
   'use strict';
   var X=window.__app;if(!X||!window.HEALTH||!window.WELL)return;
-  var q=X.q,sb=X.sb,esc=X.esc,A=X.A,types={habit:1,habit_update:1,habit_mark:1,support:1};
+  var q=X.q,sb=X.sb,esc=X.esc,A=X.A,types={habit:1,habit_update:1,habit_mark:1,support:1,growth_goal:1};
   var adding=new WeakSet(),applying=new WeakSet(),drafts={support:'',habits:''};
   function norm(s){return String(s||'').trim().toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ');}
   function days(ds){return !ds||!ds.length?'каждый день':ds.map(function(d){return X.WD[d];}).join(', ');}
   function validDays(ds){return Array.isArray(ds)&&ds.every(function(d){return Number.isInteger(d)&&d>=0&&d<=6;});}
   function validTimes(ts){return Array.isArray(ts)&&ts.length<=4&&ts.every(function(t){return /^([01]\d|2[0-3]):[0-5]\d$/.test(t);});}
-  function title(e){return e.d.name||e.d.habit_name||e.d.title||'Привычка';}
-  function asEntries(a){var out=[];[['new_habits','habit'],['habit_updates','habit_update'],['habit_marks','habit_mark'],['support_plans','support']].forEach(function(p){(a[p[0]]||[]).forEach(function(d){out.push({t:p[1],d:d});});});return out;}
+  function title(e){return e.d.title||e.d.name||e.d.habit_name||e.d.title||'Привычка';}
+  function asEntries(a){var out=[];[['new_goals','growth_goal'],['new_habits','habit'],['habit_updates','habit_update'],['habit_marks','habit_mark'],['support_plans','support']].forEach(function(p){(a[p[0]]||[]).forEach(function(d){out.push({t:p[1],d:d});});});return out;}
   function entryInfo(e){
-    var d=e.d,meta=[];
+    var d=e.d,meta=[];if(e.t==='growth_goal')return{title:d.title,meta:[d.domain==='skills'?'Навык':'Цель развития',d.target_value+' '+d.unit,d.target_date?'до '+X.fmtDM(d.target_date):'без срока'],note:d.outcome||''};
     if(e.t==='habit_mark')meta=[X.dayWord(d.day).toLowerCase(),'итог за день: '+d.count];
     else{
       if(d.target!=null)meta.push(d.target+' '+X.plural(d.target,'раз','раза','раз')+' в день');
@@ -41,6 +41,7 @@
     if(adding.has(e))throw new Error('Эта запись уже сохраняется');adding.add(e);
     try{
       var d=e.d,r=await records(),hf,h;
+      if(e.t==='growth_goal'){if(!window.GROWTH)throw new Error('Раздел развития ещё не загружен');var goalResult=await GROWTH.addGoalProposal(d);e._existing=goalResult.existing;return;}
       if(e.t==='habit'){
         if(!String(d.name||'').trim()||!validDays(d.days)||!validTimes(d.times)||!(d.target>=1&&d.target<=20))throw new Error('Проверь название и расписание привычки');
         h=r.habits.find(function(x){return !x.finished&&!r.plans.some(function(p){return p.habit_id===x.id;})&&norm(x.name)===norm(d.name);});
@@ -73,7 +74,7 @@
       }
     }finally{adding.delete(e);}
   }
-  function hasProposals(a){return['new_habits','habit_updates','habit_marks','support_plans'].some(function(k){return Array.isArray(a[k])&&a[k].length;});}
+  function hasProposals(a){return['new_goals','new_habits','habit_updates','habit_marks','support_plans'].some(function(k){return Array.isArray(a[k])&&a[k].length;});}
   function check(mi,kind,i,item){if(item._done||item._added)return'';return '<label class="pb-pick"><input type="checkbox" id="pb-select-'+mi+'-'+kind+'-'+i+'" data-pb-select="'+mi+':'+kind+':'+i+'" aria-label="Включить в план: '+esc(item.title||item.d&&title(item)||'задачу')+'"'+(item._excluded?'':' checked')+(applying.has(X.AS.msgs[mi])?' disabled':'')+'></label>';}
   function pending(m){return(m.tasks||[]).filter(function(t){return!t._added&&!t._excluded;}).length+(m.entries||[]).filter(function(e){return!e._done&&!e._excluded;}).length;}
   function planIntro(m){return '<div class="pb-title"><b>'+esc(m.plan_title)+'</b><span>Предложения, не готовые записи. Выбери нужные пункты и примени план.</span></div>';}
@@ -91,6 +92,6 @@
   document.addEventListener('submit',function(e){if(e.target.matches('[data-pb-ask]')){e.preventDefault();ask(e.target,e.target.getAttribute('data-pb-ask'));}});
   document.addEventListener('input',function(e){var f=e.target.closest('[data-pb-ask]');if(f&&e.target.tagName==='TEXTAREA')drafts[f.getAttribute('data-pb-ask')]=e.target.value;});
   document.addEventListener('change',function(e){var key=e.target.getAttribute&&e.target.getAttribute('data-pb-select');if(!key)return;var p=key.split(':'),m=X.AS.msgs[+p[0]],item=m&&(p[1]==='task'?(m.tasks||[])[+p[2]]:(m.entries||[])[+p[2]]);if(!item||applying.has(m))return;item._excluded=!e.target.checked;X.asSave();X.render();});
-  window.PLANBOT={owns:function(t){return!!types[t];},asEntries:asEntries,entryInfo:entryInfo,entryText:entryText,addFrom:addFrom,hasProposals:hasProposals,
+  window.PLANBOT={saveRow:once,owns:function(t){return!!types[t];},asEntries:asEntries,entryInfo:entryInfo,entryText:entryText,addFrom:addFrom,hasProposals:hasProposals,
     check:check,planIntro:planIntro,planFooter:planFooter,busy:function(m){return applying.has(m);},habitsPanel:function(){return panel('habits');},supportPanel:function(){return panel('support');}};
 })();

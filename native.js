@@ -24,7 +24,7 @@
   function build() {
     var out = [], now = new Date(), today = X.T(), days = [];
     for (var i = 0; i < DAYS; i++) days.push(X.addDays(today, i));
-    function push(key, when, title, body, type, extra) { if (when.getTime() > now.getTime() + 5000) out.push({ id: hash(key), title: title, body: body, schedule: { at: when, allowWhileIdle: true }, actionTypeId: type, extra: extra, channelId: (extra && extra.ch) || 'tasks', smallIcon: 'ic_stat', group: type }); }
+    function push(key, when, title, body, type, extra) { if(type!=='MED'&&quiet(when.getHours()*60+when.getMinutes()))return; if (when.getTime() > now.getTime() + 5000) out.push({ id: hash(key), title: title, body: body, schedule: { at: when, allowWhileIdle: true }, actionTypeId: type, extra: extra, channelId: (extra && extra.ch) || 'tasks', smallIcon: 'ic_stat', group: type }); }
     X.D.tasks.forEach(function (t) {
       if (t.done || t.status === 'done' || t.status === 'archived') return;
       var title = t.title, ex = { kind: 'task', id: t.id, ch: 'tasks' };
@@ -42,7 +42,7 @@
       if (t.due_date < today && e && !n) { var b = base === null ? 540 : base; for (var k = 1; k <= NAG_CAP; k++) { var mm = b + e * k; var nn = new Date(); var nm = nn.getHours() * 60 + nn.getMinutes(); var m2 = Math.ceil((nm + 1 - b) / e) * e + b + (k - 1) * e; if (m2 < 1440 && !quiet(m2)) push('t' + t.id + 'o' + k + today, at(today, m2), title, 'Просрочено', 'TASK', ex); } }
     });
     var habits = X.D.habits.slice(), plans = (window.WELL && WELL.plans && WELL.plans()) || [], pk = {};
-    var pm = {}; plans.forEach(function (p) { if (p.habit_id) { pk[p.habit_id] = p.kind; pm[p.habit_id] = (p.msgs || []).filter(Boolean); } });
+    var pm = {},pr = {}; plans.forEach(function (p) { if (p.habit_id) { pk[p.habit_id] = p.kind; pm[p.habit_id] = (p.msgs || []).filter(Boolean);pr[p.habit_id]=p; } });
     if (window.WELL && WELL.habits) WELL.habits().forEach(function (h) { habits.push(h); });
     habits.forEach(function (h) {
       if (h.paused || h.finished) return;
@@ -51,6 +51,7 @@
       var kind = pk[h.id], msgs = pm[h.id] || [], head = kind === 'med' ? 'Пора принять' : kind === 'meal' ? 'Время поесть' : kind === 'workout' ? 'Время тренировки' : 'Привычка';
       var ex = { kind: 'habit', id: h.id, ch: { med: 'meds', meal: 'meals', workout: 'workouts', nudge: 'support' }[kind] || 'habits' };
       days.forEach(function (d) {
+        if(h.started_on&&d<h.started_on)return;var plan=pr[h.id];if(plan&&((plan.start_day&&d<plan.start_day)||(plan.end_day&&d>plan.end_day)))return;
         if (!X.sched(h, d)) return;
         if (d === today && X.cnt(h, d) >= X.tgt(h)) return;
         var e = +h.remind_every || 0;
@@ -97,7 +98,8 @@
     if (busy || !X.ME || !X.D.profiles.length) return;
     busy = true;
     try {
-      var list = build(), sig = JSON.stringify(list.map(function (n) { return [n.id, +n.schedule.at, n.title]; }));
+      var list = build(), sig = JSON.stringify(list.map(function (n) { return [n.id, +n.schedule.at, n.title,n.body,n.channelId,n.actionTypeId]; }));
+      await focusSync(list);
       if (!force && sig === lastSig) return;
       var pend = await LN.getPending();
       if (pend && pend.notifications && pend.notifications.length) await LN.cancel({ notifications: pend.notifications.map(function (n) { return { id: n.id }; }) });
@@ -109,6 +111,32 @@
   /* состояние нативной части: показывается в Настройках, чтобы было видно, что работает */
   var ST = window.NATIVE = { widget: '…', notif: '…', back: '…', perm: '…', refresh: function () { wSig = ''; return widgetSync(); } };
   function tmo(p, ms, name) { return Promise.race([p, new Promise(function (_, rej) { setTimeout(function () { rej(new Error(name + ': нет ответа')); }, ms); })]); }
+  /* Локальный добровольный режим: никакого автозапуска, грантов разрешений или отметок «выполнено». */
+  var focusSig='',F={state:{supported:null,enabled:false,running:false,overlayGranted:false,notificationsGranted:false,pending:0,shownToday:0,maxPerDay:12,cooldownMinutes:10,timeoutSeconds:45,needsResume:false,lastError:''}};
+  function focusRender(){if(X.UI.sheet&&X.UI.sheet.type==='settings')X.renderSheet();}
+  F.status=async function(){try{F.state=await tmo(WB.getFocusStatus(),5000,'режим фокуса');}catch(e){F.state={supported:false,enabled:false,running:false,lastError:'Для этого режима установи APK версии 1.1.0 или новее.'};}focusRender();return F.state;};
+  F.requestPermission=async function(){await WB.requestFocusPermission();return F.status();};
+  F.requestNotifications=async function(){await WB.requestFocusNotifications();return F.status();};
+  F.setEnabled=async function(enabled){F.state=await (enabled?WB.setFocusEnabled({enabled:true}):tmo(WB.setFocusEnabled({enabled:false}),8000,'режим фокуса'));focusSig='';if(enabled&&F.state.enabled)await sync(true);setTimeout(F.status,700);focusRender();return F.state;};
+  F.test=async function(){await WB.testFocus();return F.status();};
+  F.settingsHtml=function(){
+    var s=F.state,esc=X.esc;
+    if(s.supported===false)return '<div class="fields" style="padding:14px"><b>Настойчивые напоминания со свайпом</b><div class="gh">'+esc(s.lastError)+' Обновление доступно кнопкой «Скачать APK». Обычные уведомления продолжают работать.</div></div>';
+    var state=s.running?'Режим работает':s.needsResume?'Android остановил режим — можно возобновить':s.enabled?'Режим включается…':'Выключен';
+    return '<div class="fields" style="padding:14px;display:flex;flex-direction:column;gap:10px"><b>Настойчивые напоминания со свайпом</b><div class="gh">Добровольная пауза поверх приложений. Свайп означает «увидел», а не «выполнил». Есть «Убрать сейчас», отсрочка и отключение; системные и экстренные функции не блокируются.</div><div class="meta"><span>'+esc(state)+'</span><span>Показано сегодня: '+(s.shownToday||0)+' из 12</span><span>В очереди: '+(s.pending||0)+'</span></div><div class="gh">Не чаще раза в 10 минут, максимум 12 в день. Тихие часы соблюдаются. Экран сам исчезает через 45 секунд. Не показывается на экране блокировки и во время звонка. После перезапуска телефона или остановки Android режим надо включить заново. Huawei может ограничивать фоновую работу.</div>'+(s.lastError?'<div class="err">'+esc(s.lastError)+'</div>':'')+'<div class="chips">'+(!s.overlayGranted?'<button class="chip" data-a="nativeFocusPermission">Разрешить поверх приложений</button>':'')+(!s.notificationsGranted?'<button class="chip" data-a="nativeFocusNotifications">Настройки уведомлений Android</button>':'')+(s.running?'<button class="chip" data-a="nativeFocusDisable">Отключить режим</button>':'<button class="chip" data-a="nativeFocusEnable"'+(!s.overlayGranted||!s.notificationsGranted?' disabled':'')+'>'+(s.needsResume?'Возобновить':'Включить режим')+'</button>')+'<button class="chip" data-a="nativeFocusTest"'+(!s.enabled||!s.overlayGranted?' disabled':'')+'>Проверить экран</button><button class="chip" data-a="nativeFocusStatus">Проверить состояние</button></div><div class="gh">Расписание берётся из задач, привычек, питания, тренировок и Поддержки на ближайшие 3 дня. Лекарства не перекрывают экран. Чтобы обновить расписание, открывай приложение; обычные уведомления остаются резервом. Режим не является неотключаемой блокировкой телефона.</div></div>';
+  };
+  ST.focus=F;
+  async function focusSync(list){
+    if(F.state.supported===false)return;
+    var entries=list.filter(function(n){return n.channelId!=='meds';}).map(function(n){return{key:n.id+':'+(+n.schedule.at),at:+n.schedule.at,title:n.title,body:n.body,kind:n.extra&&n.extra.kind,id:n.extra&&n.extra.id,channel:n.channelId};});
+    var payload={entries:entries,quietFrom:toMin(X.SET.quiet.from),quietTo:toMin(X.SET.quiet.to)},sig=JSON.stringify(payload);if(sig===focusSig)return;
+    try{F.state=await tmo(WB.syncFocusSchedule(payload),5000,'расписание фокуса');focusSig=sig;}catch(e){/* Старый APK продолжает пользоваться обычными уведомлениями. */}
+  }
+  function focusAction(fn){return async function(){try{await fn();}catch(e){X.toast(e&&e.message||'Не удалось изменить режим');}focusRender();};}
+  X.A.nativeFocusStatus=focusAction(F.status);X.A.nativeFocusPermission=focusAction(F.requestPermission);X.A.nativeFocusNotifications=focusAction(F.requestNotifications);
+  X.A.nativeFocusEnable=focusAction(function(){return F.setEnabled(true);});X.A.nativeFocusDisable=focusAction(function(){return F.setEnabled(false);});X.A.nativeFocusTest=focusAction(F.test);
+  document.addEventListener('visibilitychange',function(){if(!document.hidden)F.status();});
+  F.status();
   async function widgetSync2() {
     if (!WB) { ST.widget = 'плагин виджета не найден'; return; }
     if (!X.ME || !X.D.profiles.length) return;

@@ -589,8 +589,8 @@
       h += '<div class="hph">' + (/\.pdf$/i.test(p) ? '<div class="wpdf">' + I('note') + 'PDF</div>' : '<img data-ph="' + esc(p) + '" alt="Бланк">') + '<button type="button" data-a="hPhotoDel" data-v="' + i + '" aria-label="Убрать файл">' + I('x') + '</button></div>';
     });
     if ((s.photos || []).length < 4) {
-      h += '<label class="hadd">' + CAM + '<span>' + (s._up ? 'Загрузка…' : 'Снять') + '</span><input type="file" accept="image/*" capture="environment" data-wlfile hidden></label>';
-      h += '<label class="hadd">' + I('inbox') + '<span>Фото / PDF</span><input type="file" accept="image/*,application/pdf" multiple data-wlfile hidden></label>';
+      h += '<label class="hadd">' + CAM + '<span>' + (s._up ? 'Загрузка…' : 'Снять') + '</span><input type="file" accept="image/*" capture="environment" data-wlfile class="sr-only-input" aria-label="Прикрепить фото или PDF"></label>';
+      h += '<label class="hadd">' + I('inbox') + '<span>Фото / PDF</span><input type="file" accept="image/*,application/pdf" multiple data-wlfile class="sr-only-input" aria-label="Прикрепить фото или PDF"></label>';
     }
     return h + '</div>';
   }
@@ -894,6 +894,7 @@
   Object.assign(A, actions);
 
   window.WELL = {
+    exportData:function(){return{cabinet:W.cabinet.filter(function(r){return r.owner===X.ME;}),intakes:W.intakes.filter(function(r){return r.owner===X.ME;}),plans:W.plans.filter(function(r){return r.owner===X.ME;}),labs:W.labs.filter(function(r){return r.owner===X.ME;})};},
     load: load, view: view, supportView: supportView, sheet: sheet, habits: function () { return W.habits; }, plans: function () { return W.plans; }, nutMeta: nutMeta, summaryText: summaryText,
     owns: function (t) { return !!OWN[t]; }, asEntries: asEntries, entryInfo: entryInfo, entryText: entryText, addFrom: addFrom
   };
