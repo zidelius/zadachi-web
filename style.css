@@ -301,6 +301,37 @@ body.pc .composer{bottom:16px}
 .composer .btn{height:42px;width:42px;padding:0;border-radius:12px;flex-shrink:0}
 .fchip[disabled]{opacity:.5}
 
+/* Чат занимает экран; шапка и ввод не участвуют в прокрутке истории. */
+body.chat-open{overflow:hidden}
+body.chat-open #app{min-height:0}
+body.chat-open .shell{position:fixed;left:0;right:0;top:calc(var(--as-top,0px) + env(safe-area-inset-top,0px));height:calc(var(--as-height,100dvh) - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));min-height:0;overflow:hidden;padding-bottom:var(--as-nav-height,0px)}
+body.chat-open .chat-main{display:flex;min-height:0;overflow:hidden}
+body.chat-open .chat-wrap{display:flex;flex:1;min-height:0;height:100%;width:100%;max-width:900px;padding:20px 24px 12px}
+.assistant-panel{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0}
+.assistant-head{flex-shrink:0;background:var(--bg)}
+.assistant-head .chipsrow{padding:12px 0;margin:0}
+.as-thread{display:flex;position:relative;flex:1;min-height:0;min-width:0}
+.assistant-panel .chat{flex:1;min-height:0;min-width:0;margin:0;padding:4px 4px 16px 0;display:block;overflow-y:auto;overscroll-behavior-y:contain}
+.as-messages{display:flex;flex-direction:column;gap:12px;min-width:0}
+.assistant-panel .chat .m{flex-shrink:0;overflow-wrap:anywhere}
+.as-latest{position:absolute;right:10px;bottom:12px;z-index:2;display:inline-flex;align-items:center;gap:8px;min-height:44px;max-width:calc(100% - 20px);padding:10px 16px;border:1px solid var(--line);border-radius:24px;background:var(--surf);box-shadow:var(--shadow);font-size:14px;font-weight:600}
+.as-latest[hidden]{display:none}
+.as-latest>span:first-child{font-size:20px;line-height:1}
+.assistant-panel .composer{position:static;flex-shrink:0;bottom:auto;margin:8px 0 0}
+.assistant-panel .composer textarea{font-size:16px}
+.assistant-panel .aspend{max-height:100px;overflow-y:auto;overscroll-behavior:contain}
+body.chat-open.as-keyboard .bnav{display:none}
+body.chat-open:not(.pc) .chat-wrap{padding:12px 12px 8px}
+body.chat-open:not(.pc) .assistant-head .dh{font-size:32px}
+body.chat-open:not(.pc) .assistant-head .date{font-size:12px}
+@media(max-height:520px){
+  body.chat-open .chat-wrap{padding-top:8px}
+  .assistant-head .date{display:none}
+  body.chat-open .assistant-head .dh{font-size:26px}
+  .assistant-head .chipsrow{padding:6px 0}
+  .assistant-panel .aspend{max-height:60px}
+}
+
 /* ===== Время текстом и свой повтор ===== */
 .chip.tinw{padding:0 4px;cursor:text}
 .tin{width:118px;height:100%;border:0;background:transparent;outline:none;font-size:14px;text-align:center;color:var(--ink)}
