@@ -12,7 +12,7 @@
   function title(e){return e.d.title||e.d.name||e.d.habit_name||e.d.title||'Привычка';}
   function asEntries(a){var out=[];[['new_goals','growth_goal'],['new_habits','habit'],['habit_updates','habit_update'],['habit_marks','habit_mark'],['support_plans','support']].forEach(function(p){(a[p[0]]||[]).forEach(function(d){out.push({t:p[1],d:d});});});return out;}
   function entryInfo(e){
-    var d=e.d,meta=[];if(e.t==='growth_goal')return{title:d.title,meta:[d.domain==='skills'?'Навык':'Цель развития',d.target_value+' '+d.unit,d.target_date?'до '+X.fmtDM(d.target_date):'без срока'],note:d.outcome||''};
+    var d=e.d,meta=[];if(e.t==='growth_goal')return{title:d.title,meta:[d.domain==='skills'?'Навык':'Цель',d.target_value+' '+d.unit,d.target_date?'до '+X.fmtDM(d.target_date):'без срока'],note:d.outcome||''};
     if(e.t==='habit_mark')meta=[X.dayWord(d.day).toLowerCase(),'итог за день: '+d.count];
     else{
       if(d.target!=null)meta.push(d.target+' '+X.plural(d.target,'раз','раза','раз')+' в день');
@@ -31,11 +31,13 @@
   function ordinary(r,id){var h=r.habits.find(function(h){return h.id===id&&h.owner===X.ME&&!h.finished;});if(!h||r.plans.some(function(p){return p.habit_id===id;}))throw new Error('Привычка недоступна или относится к расписанию. Попроси новый вариант плана.');return h;}
   function cacheHabit(h){var i=X.D.habits.findIndex(function(x){return x.id===h.id;});if(i<0)X.D.habits.push(h);else X.D.habits[i]=h;}
   async function once(table,row,e,slot){
-    e._ids=e._ids||{};if(!e._ids[slot]){e._ids[slot]=crypto.randomUUID();X.asSave();}
-    var id=e._ids[slot],read=function(){return q(sb.from(table).select('*').eq('id',id).eq('owner',X.ME).maybeSingle());};
+    var owner=X.ME;if(!owner||row.owner&&row.owner!==owner||e._idsOwner&&e._idsOwner!==owner)throw new Error('Аккаунт изменился. Повтори действие в исходном аккаунте.');
+    function sameOwner(){if(X.ME!==owner)throw new Error('Аккаунт изменился. Повтори действие в исходном аккаунте.');}
+    e._idsOwner=owner;e._ids=e._ids||{};if(!e._ids[slot]){e._ids[slot]=crypto.randomUUID();X.asSave();}
+    var id=e._ids[slot],read=async function(){sameOwner();var found=await q(sb.from(table).select('*').eq('id',id).eq('owner',owner).maybeSingle());sameOwner();return found;};
     var existing=await read();if(existing)return existing;
-    try{return await q(sb.from(table).insert(Object.assign({},row,{id:id,owner:X.ME})).select().single());}
-    catch(error){var saved=await read();if(saved)return saved;throw error;}
+    sameOwner();try{var saved=await q(sb.from(table).insert(Object.assign({},row,{id:id,owner:owner})).select().single());sameOwner();return saved;}
+    catch(error){sameOwner();var saved=await read();if(saved)return saved;throw error;}
   }
   async function addFrom(e){
     if(adding.has(e))throw new Error('Эта запись уже сохраняется');adding.add(e);
@@ -74,7 +76,7 @@
       }
     }finally{adding.delete(e);}
   }
-  function hasProposals(a){return['new_goals','new_habits','habit_updates','habit_marks','support_plans'].some(function(k){return Array.isArray(a[k])&&a[k].length;});}
+  function hasProposals(a){return['new_goals','new_habits','habit_updates','habit_marks','support_plans','activity_logs','cooking_plans','cooking_confirm'].some(function(k){return Array.isArray(a[k])&&a[k].length;});}
   function check(mi,kind,i,item){if(item._done||item._added)return'';return '<label class="pb-pick"><input type="checkbox" id="pb-select-'+mi+'-'+kind+'-'+i+'" data-pb-select="'+mi+':'+kind+':'+i+'" aria-label="Включить в план: '+esc(item.title||item.d&&title(item)||'задачу')+'"'+(item._excluded?'':' checked')+(applying.has(X.AS.msgs[mi])?' disabled':'')+'></label>';}
   function pending(m){return(m.tasks||[]).filter(function(t){return!t._added&&!t._excluded;}).length+(m.entries||[]).filter(function(e){return!e._done&&!e._excluded;}).length;}
   function planIntro(m){return '<div class="pb-title"><b>'+esc(m.plan_title)+'</b><span>Предложения, не готовые записи. Выбери нужные пункты и примени план.</span></div>';}

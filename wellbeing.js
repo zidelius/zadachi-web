@@ -64,8 +64,8 @@
   function cabById(id) { return W.cabinet.filter(function (c) { return c.id === id; })[0]; }
   function cabByName(n) {
     n = norm(n); if (!n) return null;
-    return W.cabinet.filter(function (c) { return norm(c.name) === n; })[0] ||
-      W.cabinet.filter(function (c) { var m = norm(c.name); return m.indexOf(n) >= 0 || n.indexOf(m) >= 0; })[0] || null;
+    var found=W.cabinet.filter(function(c){return norm(c.name)===n||norm(c.name+(c.dosage?' '+c.dosage:''))===n;});
+    return found.length===1?found[0]:null;
   }
   function planById(id) { return W.plans.filter(function (p) { return p.id === id; })[0]; }
   function habitOf(p) { return p && p.habit_id ? W.habits.filter(function (h) { return h.id === p.habit_id; })[0] : null; }
@@ -73,6 +73,7 @@
   function unitOf(c) { return (c && c.unit) || 'ед.'; }
 
   async function load() {
+    var owner=X.ME;if(!owner)return;
     try {
       var since = addDays(T(), -120);
       var r = await Promise.all([
@@ -81,6 +82,7 @@
         q(sb.from('h_plans').select('*')),
         q(sb.from('labs').select('*').order('day', { ascending: false }).limit(300))
       ]);
+      if(owner!==X.ME)return;
       W.cabinet = r[0]; W.intakes = r[1]; W.plans = r[2]; W.labs = r[3];
       // привычки-расписания не показываем среди обычных привычек
       var ids = {}; W.plans.forEach(function (p) { if (p.habit_id) ids[p.habit_id] = 1; });
@@ -90,7 +92,7 @@
       X.D.habits = X.D.habits.filter(function (h) { return !ids[h.id]; });
       W.ok = true; W.error = '';
       endCourses();
-    } catch (e) { W.ok = false; W.error = (e && e.message) || 'ошибка связи'; }
+    } catch (e) { if(owner!==X.ME)return;W.ok = false; W.error = (e && e.message) || 'ошибка связи'; }
   }
   /* курс закончился — расписание ставим на паузу (напоминания перестают приходить) */
   function endCourses() {
@@ -166,8 +168,10 @@
     var addBtn = WUI.tab === 'intake' ? '<button class="btn2" data-a="wIntakeNew">' + I('plus') + 'Приём</button>' :
       WUI.tab === 'cab' ? '<button class="btn2" data-a="wItemNew">' + I('plus') + 'Добавить</button>' :
       WUI.tab === 'labs' ? '<button class="btn2" data-a="wLabNew">' + I('plus') + 'Анализы</button>' : '<button class="btn2" data-a="wProf">' + I('gear') + 'Профиль</button>';
-    var h = '<div class="top"><div><div class="date">' + X.fmtLong(T()) + '</div><h1 class="dh">Здоровье</h1></div>' + addBtn + '</div>';
-    h += tabs([['intake', 'Приём'], ['cab', 'Аптечка'], ['nut', 'Нутриенты'], ['labs', 'Анализы']], WUI.tab, 'wTab');
+    if(WUI.tab==='steps')addBtn='';
+    var h = '<div class="top"><div><div class="date">' + X.fmtLong(T()) + '</div><h1 class="dh">Здоровье</h1></div><div class="tbtns">'+(window.HREPORT?'<button class="btn2 hbell" data-a="hReport" data-v="day" aria-label="Отчёт" title="Отчёт">'+HREPORT.icon+'</button>':'') + addBtn + '</div></div>';
+    h += tabs([['intake', 'Приём'], ['cab', 'Аптечка'], ['nut', 'Нутриенты'], ['steps','Шаги'], ['labs', 'Анализы']], WUI.tab, 'wTab');
+    if(WUI.tab==='steps')return h+(window.ACTIVITY?ACTIVITY.view():'<div class="empty">Шаги загружаются. Обнови страницу.</div>');
     if (!W.ok) return h + (W.error ? '<div class="empty">Раздел пока не подключён к базе.<br>' + esc(W.error) + '<br><br>Нужно выполнить миграцию в Supabase.</div>' : '<div class="empty">Загружаю…</div>');
     return h + (WUI.tab === 'intake' ? intakeView() : WUI.tab === 'cab' ? cabView() : WUI.tab === 'nut' ? nutView() : labsView());
   }
@@ -423,19 +427,17 @@
     W.cabinet.push(saved); W.cabinet.sort(function (a, b) { return a.name < b.name ? -1 : 1; });
     return saved;
   }
-  async function adjustStock(item, delta) {
-    if (!item || item.qty == null) return;
-    var nq = Math.max(0, +item.qty + delta);
-    try { await q(sb.from('cabinet').update({ qty: nq }).eq('id', item.id)); item.qty = nq; } catch (e) { err(e); }
-  }
+  /* Остатки меняются транзакционно на сервере вместе с приёмом/отметкой. */
 
   /* --- разовый приём --- */
   function intakeSheet(s) {
     var items = W.cabinet.slice().sort(function (a, b) { return a.name < b.name ? -1 : 1; });
     var h = '';
     if (items.length) h += section('Что приняли', '<div class="chips">' + items.slice(0, 24).map(function (c) { return '<button type="button" class="chip' + (s.item_id === c.id ? ' on' : '') + '" data-a="wIntItem" data-v="' + c.id + '">' + I(c.kind === 'supp' ? 'leaf' : 'pill') + esc(c.name) + '</button>'; }).join('') + '</div>');
-    h += field('name', items.length ? 'Или другое' : 'Что приняли', s.name, 'autocomplete="off" placeholder="Например, парацетамол"');
-    h += '<div class="row2">' + numField('units', 'Сколько (шт., доз)', s.units) + '<label><div class="gl">Время</div><input class="fld" type="time" data-f="at" value="' + esc(s.at || '') + '"></label></div>';
+    var selected=cabById(s.item_id);
+    h+='<div class="rulebox">'+(selected?'Связь с аптечкой: <b>'+esc([selected.name,selected.dosage,selected.form].filter(Boolean).join(' · '))+'</b>. '+(selected.qty==null?'Остаток неизвестен — количественное списание не ведётся.':'Осталось '+r1(selected.qty)+' '+esc(selected.unit)+'. Количество будет списано при сохранении. Изменение или удаление вернёт только действительно списанное.'):'Без связи с аптечкой: сохранится только запись, остатки не изменятся.')+(s.item_id?'<br><button type="button" class="link" data-a="wIntItem" data-v="">Не связывать с аптечкой</button>':'')+'</div>';
+    h += field('name', items.length ? 'Название записи' : 'Что приняли', s.name, 'autocomplete="off" placeholder="Например, парацетамол"');
+    h += '<div class="row2">' + numField('units', selected?'Количество, '+(selected.unit||'единиц остатка'):'Сколько единиц принято', s.units) + '<label><div class="gl">Время</div><input class="fld" type="time" data-f="at" value="' + esc(s.at || '') + '"></label></div>';
     h += '<label><div class="gl">Дата</div><input class="fld" type="date" data-f="day" value="' + esc(s.day) + '"></label>';
     h += field('note', 'Заметка', s.note, 'autocomplete="off"');
     return h;
@@ -447,20 +449,23 @@
     UI.sheet = base; renderSheet(true);
   }
   async function saveIntake(btn) {
-    var s = UI.sheet; if (!s) return;
+    var s = UI.sheet; if (!s||s._saving) return;
     var name = (s.name || '').trim();
     if (!name) { toast('Выберите или напишите, что приняли'); return; }
-    if (btn) btn.disabled = true;
-    var units = num(s.units) > 0 ? num(s.units) : 1;
+    var units=num(s.units),date=s.day||T();
+    if(!(units>0)||units>1000000){toast('Укажи положительное количество в единицах остатка');return;}
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||isNaN(Date.parse(date+'T12:00:00Z'))||new Date(date+'T12:00:00Z').toISOString().slice(0,10)!==date||date>T()){toast('Для фактического приёма нужна существующая дата не позже сегодня');return;}
+    s._saving=true;if (btn) btn.disabled = true;
     try {
-      var row = { owner: X.ME, item_id: s.item_id || null, name: name, day: s.day || T(), at: s.at || null, units: units, note: s.note || '' };
-      var saved = s.id ? await q(sb.from('intakes').update(row).eq('id', s.id).select().single()) : await q(sb.from('intakes').insert(row).select().single());
+      if(s.item_id){var owner=X.ME,visible=cabById(s.item_id),fresh=await q(sb.from('cabinet').select('*').eq('owner',owner).eq('id',s.item_id).maybeSingle());if(owner!==X.ME||!fresh)throw new Error('Препарат недоступен. Обнови аптечку.');var label=function(c){return[c.name,c.dosage,c.form].filter(Boolean).join(' · ');};if(!visible||label(visible)!==label(fresh)||visible.unit!==fresh.unit){await load();renderSheet();throw new Error('Позиция аптечки изменилась. Проверь название, дозировку и единицу и сохрани снова.');}name=label(fresh);}
+      var row = { owner: X.ME, item_id: s.item_id || null, name: name, day: date, at: s.at || null, units: units, note: s.note || '' };
+      var saved = s.id ? await q(sb.from('intakes').update(row).eq('id', s.id).select().single()) : window.PLANBOT?await PLANBOT.saveRow('intakes',row,s,'intake'):await q(sb.from('intakes').insert(row).select().single());
       var i = W.intakes.findIndex(function (x) { return x.id === saved.id; });
       if (i >= 0) W.intakes[i] = saved; else W.intakes.push(saved);
       W.intakes.sort(function (a, b) { return a.day < b.day ? 1 : -1; });
-      if (!s.id) await adjustStock(cabById(saved.item_id), -units);
+      await load();
       closeSheet(); render(); toast('Записано');
-    } catch (e) { if (btn) btn.disabled = false; err(e); }
+    } catch (e) { if (btn) btn.disabled = false; err(e); }finally{s._saving=false;}
   }
 
   /* --- расписания (привычки + смысл) --- */
@@ -773,7 +778,7 @@
   function entryInfo(e) {
     var d = e.d;
     if (e.t === 'cabinet') return { title: d.name, meta: [d.kind === 'supp' ? 'БАД' : 'лекарство', d.form, d.dosage, d.qty != null ? r1(d.qty) + ' ' + (d.unit || '') : '', d.expires ? 'до ' + fmtDM(d.expires) : ''], note: d.purpose };
-    if (e.t === 'intake') return { title: d.name, meta: ['× ' + r1(d.units), dayWord(d.day || T()).toLowerCase() + (d.at ? ' ' + d.at : '')], note: d.note };
+    if (e.t === 'intake'){var stock=d.item_id&&cabById(d.item_id);return { title: d.name, meta: ['× ' + r1(d.units), dayWord(d.day || T()).toLowerCase() + (d.at ? ' ' + d.at : ''),stock?'Из аптечки: '+[stock.name,stock.dosage,stock.form].filter(Boolean).join(' · ')+'; '+(stock.qty==null?'остаток неизвестен, без списания':'остаток '+r1(stock.qty)+' '+stock.unit+'; спишется '+r1(d.units)+' '+stock.unit):'Без связи с остатком аптечки'], note: d.note };}
     var its = d.items || [], bad = its.filter(function (x) { return x.flag === 'low' || x.flag === 'high'; }).length;
     return { title: d.title, meta: [dayWord(d.day || T()).toLowerCase(), its.length + ' ' + plural(its.length, 'показатель', 'показателя', 'показателей'), bad ? 'вне нормы: ' + bad : ''], note: d.lab };
   }
@@ -788,9 +793,15 @@
     var d = e.d;
     if (e.t === 'cabinet') { await addCabinetRow({ kind: d.kind, name: d.name, form: d.form, dosage: d.dosage, active: d.active, purpose: d.purpose, qty: d.qty == null ? '' : d.qty, unit: d.unit, expires: d.expires || '', instructions: d.instructions, nutrients: d.nutrients || [], photos: e.photos || [] }); WUI.cab = d.kind === 'supp' ? 'supp' : 'med'; }
     else if (e.t === 'intake') {
-      var it = cabByName(d.name), units = +d.units > 0 ? +d.units : 1;
-      var saved = await q(sb.from('intakes').insert({ owner: X.ME, item_id: it ? it.id : null, name: d.name, day: d.day || T(), at: d.at || null, units: units, note: d.note || '' }).select().single());
-      W.intakes.push(saved); await adjustStock(it, -units);
+      var owner=X.ME,it=d.item_id?await q(sb.from('cabinet').select('*').eq('owner',owner).eq('id',d.item_id).maybeSingle()):null,units=+d.units;
+      if(owner!==X.ME)throw new Error('Аккаунт изменился. Повтори запрос.');
+      if(!(units>0)||units>1000000)throw new Error('Нужно точное количество принятого препарата в единицах остатка');
+      if(d.item_id&&!it)throw new Error('Связанный препарат недоступен. Обнови аптечку.');
+      if(it&&!confirm('Подтвердить запись о фактическом приёме?\n\n'+[it.name,it.dosage,it.form].filter(Boolean).join(' · ')+'\nКоличество: '+r1(units)+' '+(it.unit||'единиц остатка')+'\n'+(it.qty==null?'Остаток неизвестен, количественного списания не будет.':'Из остатка '+r1(it.qty)+' '+it.unit+' будет списано '+r1(units)+' '+it.unit)+'.\n\nЭто учёт принятого, не рекомендация по дозировке.'))throw new Error('Приём не подтверждён. Остатки не изменены.');
+      var canonical=it?[it.name,it.dosage,it.form].filter(Boolean).join(' · '):d.name;
+      var row={owner:X.ME,item_id:it?it.id:null,name:canonical,day:d.day||T(),at:d.at||null,units:units,note:(d.note||'')+(it&&norm(d.name)!==norm(canonical)?'\nИсходное название в сообщении: '+String(d.name).slice(0,200):'')};
+      var saved=window.PLANBOT?await PLANBOT.saveRow('intakes',row,e,'intake'):await q(sb.from('intakes').insert(row).select().single());
+      if(!W.intakes.some(function(r){return r.id===saved.id;}))W.intakes.push(saved);await load();
     } else if (e.t === 'lab') {
       var items = (d.items || []).map(function (x) { var y = { name: x.name, value: x.value, text: x.text || '', unit: x.unit || '', low: x.low, high: x.high, flag: x.flag }; y.flag = flagOf(y); return y; });
       var lr = await q(sb.from('labs').insert({ owner: X.ME, day: d.day || T(), title: d.title, lab: d.lab || '', items: items, photos: e.photos || [] }).select().single());
@@ -827,22 +838,22 @@
     /* приём */
     wIntakeNew: function () { intakeOpen(null); },
     wIntakeOpen: function (v, id) { var r = W.intakes.filter(function (x) { return x.id === id; })[0]; if (r) intakeOpen(r); },
-    wIntItem: function (v) { var c = cabById(v), s = UI.sheet; if (!c || !s) return; s.item_id = c.id; s.name = c.name + (c.dosage ? ' ' + c.dosage : ''); renderSheet(); },
+    wIntItem: function (v) { var c = cabById(v), s = UI.sheet; if (!s) return;if(!v){s.item_id=null;renderSheet();return;}if(!c)return; s.item_id = c.id; s.name = c.name + (c.dosage ? ' ' + c.dosage : ''); renderSheet(); },
     wIntakeSave: function (v, id, el) { saveIntake(el); },
     wIntakeDel: async function () {
       var s = UI.sheet; if (!s || !s.id) return;
-      try { await q(sb.from('intakes').delete().eq('id', s.id)); W.intakes = W.intakes.filter(function (x) { return x.id !== s.id; }); closeSheet(); render(); toast('Удалено'); } catch (e) { err(e); }
+      try { await q(sb.from('intakes').delete().eq('id', s.id)); W.intakes = W.intakes.filter(function (x) { return x.id !== s.id; }); await load();closeSheet(); render(); toast('Удалено; учтённое списание возвращено'); } catch (e) { err(e); }
     },
     wTakeNow: function (v, id) { var c = cabById(id); if (!c) return; if (UI.sheet) closeSheet(); intakeOpen(null, { item_id: c.id, name: c.name + (c.dosage ? ' ' + c.dosage : ''), units: '1' }); },
     wTake: async function (v, id) {
       var p = planById(id), h = habitOf(p); if (!p || !h) return;
       var c = markCount(h, T()); if (c >= tgt(h)) return;
-      await setMark(h, T(), c + 1); await adjustStock(cabById(p.item_id), -(+p.units || 1)); toast('Принято ✓ ' + p.title);
+      if(await setMark(h, T(), c + 1)===null)return;await load();render();toast('Принято ✓ ' + p.title);
     },
     wUntake: async function (v, id) {
       var p = planById(id), h = habitOf(p); if (!p || !h) return;
       var c = markCount(h, T()); if (c <= 0) return;
-      await setMark(h, T(), c - 1); await adjustStock(cabById(p.item_id), +(+p.units || 1));
+      if(await setMark(h, T(), c - 1)===null)return;await load();render();
     },
     /* расписания */
     wNudgeTopic: function (v) { if (UI.sheet) { UI.sheet.topic = v; renderSheet(); } },

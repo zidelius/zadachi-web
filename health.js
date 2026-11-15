@@ -77,6 +77,7 @@
 
   /* ---------- загрузка ---------- */
   async function load() {
+    var owner=X.ME;if(!owner)return;
     try {
       var since = addDays(T(), -120);
       var r = await Promise.all([
@@ -86,9 +87,11 @@
         q(sb.from('workouts').select('*').gte('day', addDays(T(), -365)).order('day').order('at', { nullsFirst: true })),
         q(sb.from('body_log').select('*').order('day', { ascending: false }).limit(300))
       ]);
+      if(owner!==X.ME)return;
       H.meals = r[0]; H.pantry = r[1]; H.appliances = r[2]; H.workouts = r[3]; H.body = r[4];
       H.ok = true; H.error = '';
     } catch (e) {
+      if(owner!==X.ME)return;
       H.ok = false; H.error = (e && e.message) || 'ошибка связи';
     }
   }
@@ -298,15 +301,15 @@
   }
   function patchLinkedTask(taskId, prefix, title, dayKey, time, rem) {
     var rf = remindFields(time, rem);
-    patchTask(taskId, { title: taskTitle(prefix, title, time, rf), due_date: dayKey, due_time: rf.due_time, remind_every: rf.remind_every, remind_times: rf.remind_times });
+    return patchTask(taskId, { title: taskTitle(prefix, title, time, rf), due_date: dayKey, due_time: rf.due_time, remind_every: rf.remind_every, remind_times: rf.remind_times });
   }
   async function toggleLinked(rec, table) {
     var t = rec.task_id && findTask(rec.task_id);
-    if (t) { if (t.done) reopenTask(t.id); else completeTask(t.id); return; }
+    if (t) { if (t.done) await reopenTask(t.id); else await completeTask(t.id); return; }
     // задачи уже нет — просто превращаем плановую запись в выполненную
     try {
       var row = await q(sb.from(table).update({ planned: false }).eq('id', rec.id).select().single());
-      Object.assign(rec, row); render();
+      Object.assign(rec, row); if(window.INVENTORY)await INVENTORY.load();render();
     } catch (e) { err(e); }
   }
 
@@ -390,7 +393,7 @@
   }
   function fridgeView() {
     var items = H.pantry.filter(function (p) { return p.kind === 'food'; });
-    var h = '<form class="hadd-form qtyform" autocomplete="off"><input class="fld" id="hp-name" placeholder="Продукт" aria-label="Продукт">' +
+    var h = (window.INVENTORY?INVENTORY.kitchenView():'')+'<form class="hadd-form qtyform" autocomplete="off"><input class="fld" id="hp-name" placeholder="Продукт" aria-label="Продукт">' +
       '<input class="fld hq" id="hp-qty" inputmode="decimal" placeholder="Кол-во" aria-label="Количество">' +
       '<select class="fld hu" id="hp-unit" aria-label="Единица">' + UNITS.map(function (u) { return '<option>' + u + '</option>'; }).join('') + '</select>' +
       '<button class="btn" type="submit" data-a="hPantryAdd" data-v="food" aria-label="Добавить">' + I('plus') + '</button></form>';
@@ -400,7 +403,8 @@
       var left = p.expires ? diff(p.expires, T()) : null;
       var exp = left === null ? '' : left < 0 ? '<span class="over">просрочено</span>' : left <= 2 ? '<span class="over">годен ещё ' + (left === 0 ? 'сегодня' : left + ' дн.') + '</span>' : '<span>до ' + fmtDM(p.expires) + '</span>';
       h += '<div class="task hrow"><div class="hlead"><span class="hdot">' + I('leaf') + '</span></div><button class="tb" data-a="hPantryOpen" data-id="' + p.id + '"><span class="tt">' + esc(p.name) + '</span><span class="meta">' +
-        (p.qty != null ? '<span class="tm">' + r1(p.qty) + ' ' + esc(p.unit) + '</span>' : '') + exp + '</span></button>' +
+        (p.qty != null ? '<span class="tm">' + r1(p.qty) + ' ' + esc(p.unit) + '</span>' : '') + (p.stage==='prep'?'<span class="badge">заготовка</span>':p.stage==='dish'?'<span class="badge">готовое блюдо</span>':'')+(p.qty===0?'<span class="badge">закончилось</span>':'')+exp + '</span></button>' +
+        (p.qty>0?'<button class="iconbtn" data-a="hPantryMeal" data-id="'+p.id+'" aria-label="Запланировать порцию '+esc(p.name)+'" title="Запланировать порцию">'+I('calendar')+'</button>':'')+
         '<button class="iconbtn" data-a="hPantryDel" data-id="' + p.id + '" aria-label="Убрать">' + I('x') + '</button></div>';
     });
     return h + '</div>';
@@ -432,6 +436,7 @@
     h += section('Приём пищи', chipSet('kind', Object.keys(KIND).map(function (k) { return [k, KIND[k].name]; }), s.kind));
     h += '<div class="row2"><label><div class="gl">Дата</div><input class="fld" type="date" data-f="day" value="' + esc(s.day) + '"></label><label><div class="gl">Время</div><input class="fld" type="time" data-f="at" value="' + esc(s.at || '') + '"></label></div>';
     h += field('title', 'Что это', s.title, 'placeholder="Например, гречка с курицей" autocomplete="off"');
+    if(window.INVENTORY)h+=INVENTORY.mealFields(s);
     h += section('Фото еды или этикетки', photoBlock(s));
     if ((s.photos || []).length) {
       h += section('Готовое блюдо', field('hint', '', s.hint || '', 'placeholder="Подсказка: порция 250 г, съел половину…" aria-label="Подсказка для расчёта" autocomplete="off"') +
@@ -488,16 +493,17 @@
       if (m.ai && m.ai.pm) base.pm = m.ai.pm;
       if (m.ai && m.ai.remind) Object.assign(base, { lead: m.ai.remind.lead, nag: m.ai.remind.nag });
     }
+    if(m&&window.INVENTORY)Object.assign(base,INVENTORY.mealPreset(m));
     if (preset) Object.assign(base, preset);
     UI.sheet = base; renderSheet(true);
   }
   function guessKind() { var h = new Date().getHours(); return h < 11 ? 'breakfast' : h < 16 ? 'lunch' : h < 21 ? 'dinner' : 'snack'; }
 
   async function saveMeal(btn) {
-    var s = UI.sheet; if (!s) return;
+    var s = UI.sheet; if (!s||s._saving) return;
     var title = (s.title || '').trim();
     if (!title && num(s.kcal) == null && !s.photos.length) { toast('Напиши, что это, или добавь фото'); return; }
-    if (btn) btn.disabled = true;
+    s._saving=true;if (btn) btn.disabled = true;
     var row = {
       owner: X.ME, day: s.day || T(), at: s.at || null, kind: s.kind, title: title || (KIND[s.kind] || KIND.snack).name,
       grams: num(s.grams), kcal: num(s.kcal), protein: num(s.protein), fat: num(s.fat), carbs: num(s.carbs),
@@ -509,21 +515,24 @@
     if (s.planned) row.ai = Object.assign({}, row.ai || {}, { remind: { lead: s.lead == null ? '0' : s.lead, nag: s.nag == null ? '10' : s.nag } });
     row.micros = cleanMicros(s.micros);
     try {
+      if(window.INVENTORY)Object.assign(row,INVENTORY.mealRow(s));
       if (s.planned) {
         var k = KIND[s.kind] || KIND.snack;
         var rem = { lead: s.lead == null ? '0' : s.lead, nag: s.nag == null ? '10' : s.nag };
-        if (s.id && s.task_id && findTask(s.task_id)) patchLinkedTask(s.task_id, k.name, row.title, row.day, row.at, rem);
-        else if (!s.task_id) row.task_id = await makeTask(k.name, row.title, row.day, row.at, rem);
+        if (s.id && s.task_id && findTask(s.task_id)){if(!await patchLinkedTask(s.task_id, k.name, row.title, row.day, row.at, rem))throw new Error('Не удалось обновить связанную задачу. Запись питания не изменена.');}
+        else if (!s.task_id) s.task_id = await makeTask(k.name, row.title, row.day, row.at, rem);
+        if(!s.task_id)throw new Error('Не удалось создать задачу приёма пищи. Попробуй ещё раз.');
+        row.task_id=s.task_id;
       }
       var saved = s.id
         ? await q(sb.from('meals').update(row).eq('id', s.id).select().single())
-        : await q(sb.from('meals').insert(row).select().single());
+        : window.PLANBOT?await PLANBOT.saveRow('meals',row,s,'meal'):await q(sb.from('meals').insert(row).select().single());
       var i = H.meals.findIndex(function (x) { return x.id === saved.id; });
       if (i >= 0) H.meals[i] = saved; else H.meals.push(saved);
       if (s._rm && s._rm.length) sb.storage.from(BUCKET).remove(s._rm);
-      HUI.day = saved.day; closeSheet(); render();
+      if(window.INVENTORY)await INVENTORY.load();HUI.day = saved.day; closeSheet(); render();
       toast(s.planned ? 'Запланировано' : 'Записано');
-    } catch (e) { if (btn) btn.disabled = false; err(e); }
+    } catch (e) { if (btn) btn.disabled = false; err(e); }finally{s._saving=false;}
   }
   async function delRecord(table, list, id, label) {
     var rec = list.filter(function (x) { return x.id === id; })[0]; if (!rec) return;
@@ -531,6 +540,7 @@
     try {
       await q(sb.from(table).delete().eq('id', id));
       list.splice(list.indexOf(rec), 1);
+      if(table==='meals'&&window.INVENTORY)await INVENTORY.load();
       var t = rec.task_id && findTask(rec.task_id); if (t && !t.done) deleteTask(t.id);
       if ((rec.photos || []).length) sb.storage.from(BUCKET).remove(rec.photos);
       closeSheet(); render();
@@ -554,7 +564,7 @@
         '<div class="hing">' + (r.ingredients || []).map(function (g) { return '<span class="' + (g.in_stock ? '' : 'miss') + '">' + esc(g.name) + ', ' + esc(g.amount) + (g.in_stock ? '' : ' (нет)') + '</span>'; }).join('') + '</div>' +
         '<ol>' + (r.steps || []).map(function (st) { return '<li>' + esc(st) + '</li>'; }).join('') + '</ol>' +
         (r.tip ? '<div class="muted" style="font-size:13px;margin:6px 0">' + esc(r.tip) + '</div>' : '') +
-        '<div class="row2"><button class="btn2" data-a="hRecipeEat" data-v="' + i + '">Приготовил(а)</button><button class="btn2" data-a="hRecipePlan" data-v="' + i + '">Запланировать</button></div></div>';
+        '<div class="row2"><button class="btn2" data-a="hRecipeEat" data-v="' + i + '">План готовки</button><button class="btn2" data-a="hRecipePlan" data-v="' + i + '">Запланировать еду</button></div></div>';
     });
     if (s.notes) h += '<div class="hnote">' + esc(s.notes) + '</div>';
     return h;
@@ -721,8 +731,11 @@
     if (rest.length && keys.length) h += '<div class="muted" style="font-size:13px;margin-top:8px;line-height:1.45">Без нагрузки: ' + esc(rest.join(', ')) + '.</div>';
     return h;
   }
+  function doneWorkouts() {
+    return H.workouts.filter(function (w) { return isDone(w) && w.day <= T(); }).sort(function (a, b) { return (a.day + hm(a.at)) < (b.day + hm(b.at)) ? -1 : 1; });
+  }
   function doneLifts() {
-    return H.workouts.filter(function (w) { return isDone(w) && (w.exercises || []).length; }).sort(function (a, b) { return (a.day + hm(a.at)) < (b.day + hm(b.at)) ? -1 : 1; });
+    return doneWorkouts().filter(function (w) { return (w.exercises || []).length; });
   }
   function knownExercises() {
     var seen = {}, out = [];
@@ -807,13 +820,14 @@
     });
     return out.map(function (c) { return c.n + '×' + c.reps + (c.weight != null ? ' ' + fmtN(c.weight) + ' кг' : ''); }).join(', ');
   }
-  function progressData() {
+  function progressData(workouts) {
     var map = {};
-    doneLifts().forEach(function (w) {
+    (workouts || doneLifts()).forEach(function (w) {
       (w.exercises || []).forEach(function (ex) {
         var ws = workingSets(ex); if (!ws.length) return;
-        var k = normName(ex.name), rec = map[k] = map[k] || { name: ex.name, pts: [] };
         var weighted = ws.filter(function (s) { return s.weight > 0; });
+        // Не сравниваем кг и повторы как одну шкалу, если упражнение меняло тип нагрузки.
+        var k = normName(ex.name) + (weighted.length ? '|kg' : '|reps'), rec = map[k] = map[k] || { name: ex.name, pts: [] };
         var score = weighted.length ? Math.max.apply(null, weighted.map(function (s) { return s.weight * (1 + s.reps / 30); })) : Math.max.apply(null, ws.map(function (s) { return s.reps; }));
         var vol = ws.reduce(function (a, s) { return a + s.reps * (s.weight || 0); }, 0);
         rec.pts.push({ day: w.day, score: score, kg: weighted.length > 0, summary: summarizeSets(ws), vol: vol });
@@ -830,23 +844,45 @@
     return '<svg viewBox="0 0 ' + W + ' ' + Hh + '" class="hchart" role="img" aria-label="График прогресса"><path d="' + xy.map(function (p, i) { return (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); }).join('') + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' +
       xy.map(function (p) { return '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.6" fill="currentColor"/>'; }).join('') + '</svg><div class="hrange"><span>' + fmtN(mn) + ' ' + unit + '</span><span>' + fmtN(mx) + ' ' + unit + '</span></div>';
   }
-  function weeklyVolume() {
+  function workoutProgress(period) {
+    var all = doneWorkouts(), since = period && period !== 'all' ? addDays(T(), 1 - Number(period)) : null;
+    var list = all.filter(function (w) { return !since || w.day >= since; });
+    var summary = { workouts: list.length, days: 0, minutes: 0, minuteRecords: 0, sets: 0, reps: 0, volume: 0, exercises: 0, from: list.length ? list[0].day : since, to: T(), allWorkouts: all.length };
+    var days = {}, names = {};
+    list.forEach(function (w) {
+      days[w.day] = 1;
+      if (num(w.minutes) !== null && num(w.minutes) >= 0) { summary.minutes += num(w.minutes); summary.minuteRecords++; }
+      (w.exercises || []).forEach(function (ex) {
+        var ws = workingSets(ex); if (!ws.length) return;
+        names[normName(ex.name)] = 1; summary.sets += ws.length;
+        ws.forEach(function (s) { summary.reps += +s.reps; if (+s.weight > 0) summary.volume += +s.reps * +s.weight; });
+      });
+    });
+    summary.days = Object.keys(days).length; summary.exercises = Object.keys(names).length;
+    return { summary: summary, workouts: list, exercises: progressData(list) };
+  }
+  function weeklyVolume(workouts) {
     var wk = [], mon = addDays(T(), -((new Date().getDay() + 6) % 7));
     for (var i = 11; i >= 0; i--) wk.push({ from: addDays(mon, -7 * i), v: 0 });
-    doneLifts().forEach(function (w) {
+    (workouts || doneLifts()).forEach(function (w) {
       var b = wk.filter(function (x) { return w.day >= x.from && w.day < addDays(x.from, 7); })[0]; if (!b) return;
       (w.exercises || []).forEach(function (e) { workingSets(e).forEach(function (s) { b.v += s.reps * (s.weight || 0); }); });
     });
     var mx = Math.max.apply(null, wk.map(function (x) { return x.v; }));
     if (!mx) return '';
-    return '<div class="hsum"><div class="hk"><b>' + Math.round(wk[11].v / 100) / 10 + '</b><span>т поднято на этой неделе</span></div><svg viewBox="0 0 300 80" class="hchart" style="height:80px" role="img" aria-label="Объём по неделям">' +
+    // Верхний показатель раньше всегда показывал текущую пустую неделю: «0»,
+    // даже когда в журнале были реальные тренировки. Здесь график, не общий итог.
+    return '<div class="hsum"><div class="gl">Силовой объём по календарным неделям</div><div class="muted">Эта неделя: ' + fmtN(wk[11].v / 1000) + ' т. Учитываются только записанные рабочие подходы с весом.</div><svg viewBox="0 0 300 80" class="hchart" style="height:80px" role="img" aria-label="Объём по неделям">' +
       wk.map(function (x, i) { var hh = Math.max(x.v ? 3 : 0, x.v / mx * 70); return '<rect x="' + (i * 25 + 3) + '" y="' + (76 - hh) + '" width="19" height="' + hh + '" rx="3" fill="currentColor" opacity="' + (i === 11 ? 1 : 0.45) + '"/>'; }).join('') + '</svg><div class="hrange"><span>12 недель назад</span><span>эта неделя</span></div></div>';
   }
   function progView() {
-    var data = progressData(), keys = Object.keys(data);
-    if (!keys.length) return '<div class="empty">Прогресс появится, когда ты запишешь несколько силовых тренировок. По каждому упражнению покажу рабочий максимум (расчётный вес на один повтор) и как он менялся.</div>';
+    var period = HUI.progP || 'all', p = workoutProgress(period), s = p.summary, data = p.exercises, keys = Object.keys(data);
+    var h = '<div class="chipsrow">' + [['all', 'Вся история'], ['30', '30 дней'], ['90', '90 дней']].map(function (it) { return '<button class="fchip' + (period === it[0] ? ' on' : '') + '" data-a="hProgP" data-v="' + it[0] + '">' + it[1] + '</button>'; }).join('') + '</div>';
+    if (!s.workouts) return h + '<div class="empty">' + (s.allWorkouts ? 'За выбранный период проведённых тренировок нет. Выбери «Вся история».' : 'Запиши проведённую тренировку: здесь появятся регулярность, время занятий и прогресс упражнений. Запланированные, но не выполненные тренировки не считаются.') + '</div>';
+    h += '<div class="hsum"><div class="hk"><b>' + s.workouts + '</b><span>' + plural(s.workouts, 'проведённая тренировка', 'проведённые тренировки', 'проведённых тренировок') + '</span></div><div class="meta"><span>' + s.days + ' ' + plural(s.days, 'активный день', 'активных дня', 'активных дней') + '</span>' + (s.minuteRecords ? '<span>' + fmtN(s.minutes) + ' мин занятий</span>' : '') + (s.sets ? '<span>' + s.sets + ' ' + plural(s.sets, 'рабочий подход', 'рабочих подхода', 'рабочих подходов') + '</span><span>' + fmtN(s.reps) + ' повторений</span>' + (s.volume > 0 ? '<span>' + fmtN(s.volume / 1000) + ' т с внешним весом</span>' : '') : '') + '</div><div class="muted" style="font-size:12.5px;margin-top:8px">' + esc(fmtDM(s.from)) + ' — ' + esc(fmtDM(s.to)) + '. Только фактические занятия. История загружается за последний год; замеры тела для этого не нужны.</div></div>';
+    h += weeklyVolume(p.workouts);
+    if (!keys.length) return h + '<div class="empty">Тренировки учтены выше. Для силовых рекордов добавь упражнения с подходами; бег, ходьба и другие занятия учитываются по числу тренировок и минутам.</div>';
     keys.sort(function (a, b) { return data[a].pts[data[a].pts.length - 1].day < data[b].pts[data[b].pts.length - 1].day ? 1 : -1; });
-    var h = weeklyVolume();
     h += '<div class="dday">Упражнения</div>';
     keys.forEach(function (k) {
       var d = data[k], pts = d.pts, last = pts[pts.length - 1], first = pts[0], unit = last.kg ? 'кг' : 'повт.';
@@ -860,7 +896,7 @@
     return h;
   }
   function progSheet(s) {
-    var d = progressData()[s.key]; if (!d) return '<div class="empty">Нет данных</div>';
+    var d = workoutProgress(HUI.progP || 'all').exercises[s.key]; if (!d) return '<div class="empty">Нет данных за выбранный период</div>';
     var pts = d.pts, kg = pts[pts.length - 1].kg, best = pts.reduce(function (a, p) { return p.score > a.score ? p : a; }, pts[0]);
     var h = '<div class="muted" style="line-height:1.5">' + (kg ? 'Расчётный максимум на один повтор (формула Эпли) — лучший подход в тренировке.' : 'Максимум повторений в подходе.') + '</div>';
     h += '<div class="hsum"><div class="hk"><b>' + fmtN(best.score) + '</b><span>' + (kg ? 'кг, рекорд ' : 'повторений, рекорд ') + esc(dayWord(best.day).toLowerCase()) + '</span></div>' + lineSvg(pts.map(function (p) { return { x: p.day, y: p.score }; }), kg ? 'кг' : 'повт.') + '</div>';
@@ -952,6 +988,7 @@
     hFoodTab: function (v) { HUI.foodTab = v; render(); },
     hKTab: function (v) { HUI.kTab = v; render(); },
     hFitTab: function (v) { HUI.fitTab = v; render(); },
+    hProgP: function (v) { HUI.progP = ['all', '30', '90'].indexOf(v) >= 0 ? v : 'all'; render(); },
     hDay: function (v) { HUI.day = v === 'prev' ? addDays(day(), -1) : v === 'next' ? addDays(day(), 1) : T(); render(); },
     hSet: function (v) {
       var s = UI.sheet; if (!s) return; var i = v.indexOf(':'), f = v.slice(0, i), val = v.slice(i + 1);
@@ -968,6 +1005,7 @@
     hMetricDel: function (v) { var s = UI.sheet; if (s && s.metrics) { s.metrics.splice(+v, 1); renderSheet(); } },
     /* еда */
     hMealNew: function () { mealOpen(null, { day: day() }); },
+    hPantryMeal: function(v,id){var p=H.pantry.filter(function(x){return x.id===id;})[0];if(!p||!(p.qty>0)){toast('Сначала укажи положительный остаток');return;}mealOpen(null,{day:day(),title:p.name,planned:true,stock_item_id:p.id,stock_qty:'',stock_unit:p.unit});},
     hMealOpen: function (v, id) { var m = H.meals.filter(function (x) { return x.id === id; })[0]; if (m) mealOpen(m); },
     hMealSave: function (v, id, el) { saveMeal(el); },
     hMealDel: function () { var s = UI.sheet; if (s && s.id) delRecord('meals', H.meals, s.id, 'Запись'); },
@@ -1009,7 +1047,7 @@
     hApplAdd: function (v, id, el) { var n = ((el.form.querySelector('#ha-name') || {}).value || '').trim(); if (n) actions.hApplToggle(n); },
     hRecipeOpen: function () { UI.sheet = { type: 'h-recipe', text: '', recipes: null }; renderSheet(true); },
     hRecipeGo: function () { recipeGo(); },
-    hRecipeEat: function (v) { var r = UI.sheet.recipes[+v]; mealOpen(null, Object.assign(recipeToMeal(r), { day: T(), at: nowHM(), planned: false })); },
+    hRecipeEat: async function (v) { var r = UI.sheet.recipes[+v];if(window.INVENTORY){try{await INVENTORY.fromRecipe(r);closeSheet();HUI.foodTab='kitchen';HUI.kTab='fridge';render();}catch(e){err(e);}return;}toast('Учёт готовки загружается. Обнови страницу.'); },
     hRecipePlan: function (v) { var r = UI.sheet.recipes[+v]; mealOpen(null, Object.assign(recipeToMeal(r), { day: T(), kind: 'dinner', planned: true })); },
     /* тренировки */
     hWorkNew: function () { workOpen(null); },
@@ -1056,6 +1094,7 @@
     var el = e.target; if (!isH() || !el.getAttribute) return;
     if (el.getAttribute('data-ex')) { setEx(el); return; }
     var f = el.getAttribute('data-f'); if (f) UI.sheet[f] = el.value;
+    if(f==='stock_item_id'){var p=H.pantry.filter(function(x){return x.id===el.value;})[0];UI.sheet.stock_qty='';UI.sheet.stock_unit=p?p.unit:'';renderSheet();}
     if (f && UI.sheet.type === 'h-goal') renderSheet();   // обновить подсказку и кнопки расчёта БЖУ
     if (el.hasAttribute('data-hfile') && el.files && el.files.length) { var files = Array.prototype.slice.call(el.files); el.value = ''; addPhotos(files); }
   });
@@ -1091,8 +1130,8 @@
     rerenderKeep();
   }
 
-  var ETITLE = { meal: 'Питание', workout: 'Тренировки', body: 'Замеры', pantry: 'Холодильник', note: 'Заметки', cabinet: 'Аптечка', intake: 'Приём', lab: 'Анализы', growth_goal:'Развитие', habit:'Привычки', habit_update:'Изменение привычки', habit_mark:'Отметка привычки', support:'Поддержка' };
-  function entryOwner(t) { return window.PLANBOT&&PLANBOT.owns(t)?PLANBOT:window.WELL&&WELL.owns(t)?WELL:null; }
+  var ETITLE = { meal: 'Питание', workout: 'Тренировки', body: 'Замеры', pantry: 'Холодильник', note: 'Заметки', cabinet: 'Аптечка', intake: 'Приём', lab: 'Анализы', growth_goal:'Цели',activity:'Шаги',cooking_plan:'Готовка', habit:'Привычки', habit_update:'Изменение привычки', habit_mark:'Отметка привычки', support:'Поддержка' };
+  function entryOwner(t) { return [window.ACTIVITY,window.INVENTORY,window.PLANBOT,window.WELL].filter(function(o){return o&&o.owns&&o.owns(t);})[0]||null; }
   function asEntries(a, photos) {
     var out = [], used = false;
     var withPh = function () { if (used || !photos || !photos.length) return []; used = true; return photos.slice(); };
@@ -1101,6 +1140,8 @@
     (a.body_logs || []).forEach(function (d) { out.push({ t: 'body', d: d, photos: withPh() }); });
     if (window.WELL) out = out.concat(WELL.asEntries(a, withPh));
     if (window.PLANBOT) out = out.concat(PLANBOT.asEntries(a));
+    if(window.ACTIVITY)out=out.concat(ACTIVITY.asEntries(a));
+    if(window.INVENTORY)out=out.concat(INVENTORY.asEntries(a));
     (a.pantry_items || []).forEach(function (d) { out.push({ t: 'pantry', d: d }); });
     (a.new_notes || []).forEach(function (d) { out.push({ t: 'note', d: d }); });
     return out;
@@ -1110,7 +1151,8 @@
     var d = e.d, when = function () { return (d.planned ? 'запланировано, ' : '') + dayWord(d.day || T()).toLowerCase() + (d.at ? ' ' + d.at : ''); };
     if (e.t === 'meal') {
       var k = KIND[d.kind] || KIND.snack;
-      return { title: d.title, meta: [k.name, d.kcal != null ? Math.round(d.kcal) + ' ккал' : '', (d.protein != null || d.fat != null || d.carbs != null) ? 'Б ' + Math.round(d.protein || 0) + ' · Ж ' + Math.round(d.fat || 0) + ' · У ' + Math.round(d.carbs || 0) : '', d.grams ? Math.round(d.grams) + ' г' : '', when()], note: d.note };
+      var stock=d.stock_item_id&&H.pantry.filter(function(p){return p.id===d.stock_item_id;})[0];
+      return { title: d.title, meta: [k.name, d.kcal != null ? Math.round(d.kcal) + ' ккал' : '', (d.protein != null || d.fat != null || d.carbs != null) ? 'Б ' + Math.round(d.protein || 0) + ' · Ж ' + Math.round(d.fat || 0) + ' · У ' + Math.round(d.carbs || 0) : '', d.grams ? Math.round(d.grams) + ' г' : '', when(),d.stock_item_id?'Из холодильника: '+(stock?stock.name:'продукт недоступен')+', '+r1(d.stock_qty)+' '+d.stock_unit+(stock&&stock.qty==null?' — остаток неизвестен; сначала укажи его в холодильнике':d.planned?' — спишется после галочки':' — спишется при сохранении'):'Без связи с холодильником — остатки не изменятся'], note: d.note };
     }
     if (e.t === 'workout') {
       var exs = d.exercises || [], ns = exs.reduce(function (a, x) { return a + workingSets(x).length; }, 0);
@@ -1123,6 +1165,8 @@
   }
   var BTN = { meal: function (d) { return d.planned ? 'Запланировать' : 'Записать в питание'; }, workout: function (d) { return d.planned ? 'Запланировать' : 'Записать тренировку'; }, body: function () { return 'Записать замер'; }, pantry: function (d) { return d.kind === 'spice' ? 'В приправы' : 'В холодильник'; }, note: function () { return 'Создать заметку'; }, cabinet: function () { return 'В аптечку'; }, intake: function () { return 'Записать приём'; }, lab: function () { return 'Записать анализы'; } };
   BTN.growth_goal=function(){return 'Создать цель';};BTN.habit=function(){return 'Создать привычку';};BTN.habit_update=function(){return 'Применить изменения';};BTN.habit_mark=function(){return 'Подтвердить отметку';};BTN.support=function(){return 'Включить поддержку';};
+  BTN.activity=function(){return 'Сохранить шаги';};BTN.cooking_plan=function(){return 'Создать план готовки';};
+  ETITLE.cooking_confirm='Готовность';BTN.cooking_confirm=function(){return 'Подтвердить готовность';};
   var DONE ={ ok: 'записано', note: 'в заметках', task: 'в задачах', exists:'уже есть' };
   var AS_ENTRY_ADDING=new WeakSet();
   function asCards(m, mi) {
@@ -1159,8 +1203,9 @@
   async function addMealFrom(d, photos, entry) {
     var k = KIND[d.kind] || KIND.snack, day = d.day || T();
     var row = { owner: X.ME, day: day, at: d.at || null, kind: d.kind in KIND ? d.kind : 'snack', title: d.title, grams: d.grams, kcal: d.kcal, protein: d.protein, fat: d.fat, carbs: d.carbs, note: d.note || '', photos: photos || [], planned: !!d.planned, ai: { source: 'assistant' } };
+    if(window.INVENTORY)Object.assign(row,INVENTORY.mealProposal(d));
     if (row.planned) row.task_id = await assistantPlanTask(k.name,d,entry);
-    var saved = await saveAssistantRow('meals',row,entry); if(!H.meals.some(function(x){return x.id===saved.id;}))H.meals.push(saved); HUI.day = saved.day;
+    var saved = await saveAssistantRow('meals',row,entry); if(!H.meals.some(function(x){return x.id===saved.id;}))H.meals.push(saved); if(window.INVENTORY)await INVENTORY.load();HUI.day = saved.day;
   }
   async function addWorkoutFrom(d, photos, entry) {
     var day = d.day || T();
@@ -1263,7 +1308,7 @@
     asAttach: asAttach, asPending: asPending, asPendingPaths: function () { return PEND.slice(); }, asUploading: function () { return PEND_UP > 0; },
     /* для отчёта (report.js) */
     r: { H: H, isDone: isDone, mealsOf: mealsOf, totals: totals, loadOf: loadOf, workingSets: workingSets, summarizeSets: summarizeSets, heat: heat,
-      normName: normName, KIND: KIND, FKIND: FKIND, MUS: MUS, TARGET: TARGET, photoBlob: photoBlob, num: num, hm: hm, day: day },
+      normName: normName, KIND: KIND, FKIND: FKIND, MUS: MUS, TARGET: TARGET, photoBlob: photoBlob, num: num, hm: hm, day: day, workoutProgress: workoutProgress },
     asTake: function () { var p = PEND; PEND = []; return p; }, asPhotos: asPhotos, asImages: asImages, asEntries: asEntries, asCards: asCards, asSummary: asSummary,
     /* утилиты для раздела «Здоровье» (wellbeing.js) */
     u: {

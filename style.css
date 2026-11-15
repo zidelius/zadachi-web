@@ -799,3 +799,16 @@ button[aria-busy="true"]{cursor:progress}
 .growth-log>small{color:var(--muted);font-size:13px}
 @media(max-width:700px){.growth-grid{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:520px){.growth-form{grid-template-columns:minmax(0,1fr)}.growth-card{padding:14px}.growth-actions>.btn{flex:1 1 100%}}
+/* Учёт готовки использует те же поля/кнопки, но не горизонтальные карточки чата. */
+.inventory-kitchen{margin:18px 0 24px;min-width:0}
+.inventory-kitchen>h3{font-family:var(--display);margin:18px 0 10px}
+.inventory-form,.inventory-card,.inventory-log .prop{display:flex;flex-direction:column;align-items:stretch;gap:12px;min-width:0;margin:14px 0;padding:16px;border:1px solid var(--line);border-radius:14px}
+.inventory-form h3,.inventory-card p{margin:0}
+.inventory-ingredient{display:grid;gap:10px;padding:12px;border:1px solid var(--line);border-radius:10px;min-width:0}
+.inventory-form input,.inventory-form select,.inventory-form textarea,.inventory-meal select{max-width:100%;min-width:0;width:100%;box-sizing:border-box}
+.inventory-form .row2{min-width:0}
+.inventory-form label,.inventory-meal label{display:block;min-width:0}
+.inventory-card b,.inventory-card p,.inventory-log p{overflow-wrap:anywhere}
+.inventory-meal{display:grid;gap:8px;padding:14px;border:1px solid var(--line);border-radius:12px}
+.inventory-meal p{margin:0}
+@media(max-width:480px){.inventory-form,.inventory-card,.inventory-log .prop{padding:12px}.inventory-form .row2{grid-template-columns:minmax(0,1fr)}}
