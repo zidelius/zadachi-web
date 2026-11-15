@@ -63,13 +63,13 @@
         var marks=X.D.marks[h.id]=X.D.marks[h.id]||{};if(d.count)marks[d.day]=d.count;else delete marks[d.day];
       }else if(e.t==='support'){
         if(!String(d.title||'').trim()||!validDays(d.days)||!validTimes(d.times)||!d.times.length||!Array.isArray(d.messages)||!d.messages.length)throw new Error('Для поддержки нужны время, дни и фразы');
-        var duplicate=r.plans.find(function(p){return p.kind==='nudge'&&norm(p.title)===norm(d.title)&&(!e._ids||p.id!==e._ids.plan);});if(duplicate){e._existing=true;await WELL.load();return;}
+        var duplicate=r.plans.find(function(p){return p.kind==='nudge'&&norm(p.title)===norm(d.title)&&(!e._ids||p.id!==e._ids.plan);});if(duplicate){e._existing=true;var existingHabit=r.habits.find(function(x){return x.id===duplicate.habit_id;});if(existingHabit)cacheHabit(existingHabit);await WELL.load();return;}
         // До создания связанного плана новая служебная привычка на паузе: при сбое нет лишних уведомлений.
         hf={name:d.title,icon:'star',color:X.COLORS[4],target:d.times.length,days:d.days,remind:d.times[0],remind_at:d.times.slice(1),remind_every:0,started_on:X.T(),paused:true,finished:false};
         h=await once('habits',hf,e,'habit');
         await once('h_plans',{kind:'nudge',title:d.title,units:1,item_id:null,habit_id:h.id,start_day:X.T(),end_day:null,msgs:d.messages.slice(0,7).map(function(s){return String(s).slice(0,140);}),topic:['food','fit','tasks','sleep','other'].indexOf(d.topic)>=0?d.topic:'other'},e,'plan');
-        if(h.paused)await q(sb.from('habits').update({paused:false}).eq('id',h.id).eq('owner',X.ME).select().single());
-        X.D.habits=X.D.habits.filter(function(x){return x.id!==h.id;});await WELL.load();
+        if(h.paused)h=await q(sb.from('habits').update({paused:false}).eq('id',h.id).eq('owner',X.ME).select().single());
+        cacheHabit(h);await WELL.load();
       }
     }finally{adding.delete(e);}
   }
