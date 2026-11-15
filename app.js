@@ -152,7 +152,7 @@ function applyTheme(){
 function isPC(){return SET.layout==='pc'||(SET.layout==='auto'&&window.innerWidth>=860);}
 function wide(){return isPC()&&window.innerWidth>=1280;}
 if(window.matchMedia)matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(){if(SET.theme==='auto'){applyTheme();}});
-var lastPC=null;window.addEventListener('resize',function(){var p=isPC();if(p!==lastPC){lastPC=p;applyTheme();render();}});
+var lastPC=null;window.addEventListener('resize',function(){var p=isPC();if(p!==lastPC){if(AS&&AS.follow)AS.forceBottom=true;lastPC=p;applyTheme();render();}});
 
 /* =================== Логика задач =================== */
 function mineVisible(t){
@@ -363,6 +363,8 @@ function toast(text,undo){
 /* =================== Вход =================== */
 function authScreen(mode,msg){
   applyTheme();
+  document.body.classList.remove('chat-open','as-keyboard');
+  if(AS&&AS.observer)AS.observer.disconnect();
   var app=document.getElementById('app');
   var logo='<div class="logo"><b>'+I('check')+'</b>задачи</div>';
   if(mode==='setpass'){
@@ -574,9 +576,9 @@ function startVoice(target){
 }
 
 /* помощник */
-var AS={msgs:[],busy:false,loaded:null};
+var AS={msgs:[],busy:false,loaded:null,draft:'',follow:true,unread:false,forceBottom:false,observer:null,viewportBase:0,viewportWidth:0};
 function asKey(){return 'zadachi-assistant-'+ME;}
-function asLoad(){if(AS.loaded===ME)return;AS.loaded=ME;try{AS.msgs=JSON.parse(localStorage.getItem(asKey())||'[]');}catch(e){AS.msgs=[];}}
+function asLoad(){if(AS.loaded===ME)return;AS.loaded=ME;AS.draft='';AS.unread=false;AS.forceBottom=true;try{AS.msgs=JSON.parse(localStorage.getItem(asKey())||'[]');}catch(e){AS.msgs=[];}}
 function asSave(){try{localStorage.setItem(asKey(),JSON.stringify(AS.msgs.slice(-40)));}catch(e){}}
 function nl(s){return esc(s).replace(/\n/g,'<br>');}
 function assistantView(){
@@ -585,14 +587,15 @@ function assistantView(){
   if(!SET.assistant){
     return h+'<div class="fields" style="margin-top:18px;padding:18px;display:flex;flex-direction:column;gap:12px"><div style="font-size:16px;line-height:1.5">ИИ-помощник смотрит твои задачи, привычки, заметки, питание и тренировки. Он составляет план на день, находит в заметках дела, подводит итоги питания и тренировок, а по фото еды, этикеток, экрана тренажёра или весов предлагает, куда записать данные. Сам он ничего не меняет: каждую запись ты подтверждаешь.</div><div class="muted" style="font-size:14px;line-height:1.5">Когда ты пользуешься помощником, эти данные и присланные фото отправляются выбранному на сервере провайдеру — OpenAI или Claude (Anthropic) — для обработки. Выключить можно в любой момент в настройках.</div><button class="btn" data-a="asOn">'+I('spark')+'Включить помощника</button></div>';
   }
+  h='<section class="assistant-panel" aria-label="Чат с помощником"><header class="assistant-head">'+h;
   var dis=AS.busy?' disabled':'',hl=!!window.HEALTH;
   h+='<div class="chipsrow"><button class="fchip" data-a="asPlan"'+dis+'>'+I('sun')+'План на сегодня</button>'+(hl?'<button class="fchip" data-a="asFood"'+dis+'>'+I('leaf')+'Итоги питания</button><button class="fchip" data-a="asFit"'+dis+'>'+I('dumb')+'Анализ тренировок</button><button class="fchip" data-a="hRecipeOpen">'+I('spark')+'Что приготовить</button>'+(window.WELL?'<button class="fchip" data-a="asHealth"'+dis+'>'+I('heart')+'Общий разбор здоровья</button>':''):'')+'<button class="fchip" data-a="asNotes"'+dis+'>'+I('note')+'Разобрать заметки</button></div>';
-  h+='<div class="chat" id="chat">';
+  h+='</header><div class="as-thread"><div class="chat" id="chat" role="region" aria-label="История сообщений" tabindex="0" data-user="'+esc(ME)+'" data-count="'+AS.msgs.length+'"><div class="as-messages">';
   if(!AS.msgs.length)h+='<div class="empty">Спроси что угодно: «что у меня сегодня?», «сколько мне ещё съесть до цели?», «как у меня идут тренировки?».<br>Можно прикрепить фото с подписью: еды, этикетки, экрана тренажёра, весов, продуктов или записи. Я разберу и спрошу, куда это занести: в питание, тренировки, заметки или задачи.</div>';
   AS.msgs.forEach(function(m,mi){
-    if(m.role==='user'){h+='<div class="m u">'+(m.photos&&m.photos.length&&window.HEALTH?HEALTH.asPhotos(m.photos):'')+nl(m.content)+'</div>';return;}
-    if(m.error){h+='<div class="m a err">'+nl(m.content)+'</div>';return;}
-    h+='<div class="m a">'+nl(m.content);
+    if(m.role==='user'){h+='<div class="m u" data-mi="'+mi+'">'+(m.photos&&m.photos.length&&window.HEALTH?HEALTH.asPhotos(m.photos):'')+nl(m.content)+'</div>';return;}
+    if(m.error){h+='<div class="m a err" data-mi="'+mi+'">'+nl(m.content)+'</div>';return;}
+    h+='<div class="m a" data-mi="'+mi+'">'+nl(m.content);
     (m.questions||[]).forEach(function(q2){h+='<div class="q">'+I('msg')+'<span>'+esc(q2)+'</span></div>';});
     var open=(m.tasks||[]).filter(function(t){return !t._added;}).length;
     (m.tasks||[]).forEach(function(t,ti){
@@ -606,7 +609,7 @@ function assistantView(){
     h+='</div>';
   });
   if(AS.busy)h+='<div class="m a muted">Думаю…</div>';
-  h+='</div><form class="composer" id="asform" autocomplete="off">'+(window.HEALTH?HEALTH.asPending()+HEALTH.asAttach():'')+'<textarea id="asin" rows="1" placeholder="'+(window.HEALTH?'Сообщение или фото…':SR?'Напиши или скажи помощнику':'Напиши помощнику')+'" aria-label="Сообщение помощнику"></textarea>'+micBtn('as')+'<button class="btn" aria-label="Отправить"'+(AS.busy?' disabled':'')+'>'+I('send')+'</button></form>';
+  h+='</div></div><button type="button" class="as-latest" id="as-latest" data-a="asLatest" aria-controls="chat" hidden><span aria-hidden="true">↓</span><span>К последним</span></button></div><form class="composer" id="asform" autocomplete="off">'+(window.HEALTH?HEALTH.asPending()+HEALTH.asAttach():'')+'<textarea id="asin" rows="1" placeholder="'+(window.HEALTH?'Сообщение или фото…':SR?'Напиши или скажи помощнику':'Напиши помощнику')+'" aria-label="Сообщение помощнику">'+esc(AS.draft)+'</textarea>'+micBtn('as')+'<button class="btn" aria-label="Отправить"'+(AS.busy?' disabled':'')+'>'+I('send')+'</button></form></section>';
   return h;
 }
 async function askAssistant(mode,label,noteId,opts){
@@ -618,7 +621,7 @@ async function askAssistant(mode,label,noteId,opts){
     return{role:m.role,content:c};});
   AS.msgs.push({role:'user',content:label,photos:photos});
   if(mode==='chat')history.push({role:'user',content:label});
-  AS.busy=true;asSave();UI.view='assistant';render();asScroll();
+  AS.busy=true;AS.forceBottom=true;asSave();UI.view='assistant';render();
   try{
     var images=photos.length&&window.HEALTH?await HEALTH.asImages(photos):[];
     var r=await sb.functions.invoke(FN_NAME,{body:{mode:mode,messages:history.slice(-12),today:T(),now:fmtLong(T())+', '+nowHM(),note_id:noteId||null,images:images,health_ctx:window.WELL?WELL.summaryText():''}});
@@ -626,10 +629,55 @@ async function askAssistant(mode,label,noteId,opts){
     var a=r.data||{};AS.msgs.push({role:'assistant',content:a.reply||'Готово.',tasks:a.tasks||[],moves:a.moves||[],questions:a.questions||[],entries:window.HEALTH?HEALTH.asEntries(a,photos):[]});
     var auto=opts&&opts.autoAdd&&(a.tasks||[]).length&&!(a.questions||[]).length&&a.tasks.length<=5;
   }catch(e){AS.msgs.push({role:'assistant',error:true,content:'Не получилось: '+(e.message||'ошибка связи')+(/Failed to send|fetch/i.test(e.message||'')?'. Проверь, что функция помощника (assistant) опубликована в Supabase.':'')});}
-  AS.busy=false;asSave();render();asScroll();
+  AS.busy=false;asSave();render();
   if(typeof auto!=='undefined'&&auto){var mi=AS.msgs.length-1,n=0;for(var i=0;i<AS.msgs[mi].tasks.length;i++){if(await asAddTask(mi,i))n++;}if(n)toast(n===1?'Задача добавлена: '+AS.msgs[mi].tasks[0].title:'Добавлено задач: '+n);}
 }
-function asScroll(){setTimeout(function(){var c=document.getElementById('asform');if(c&&c.scrollIntoView)c.scrollIntoView({block:'end'});},30);}
+function asNearBottom(c){return c.scrollHeight-c.clientHeight-c.scrollTop<64;}
+function asJumpState(c){
+  var b=document.getElementById('as-latest');if(!b||!c)return;
+  b.hidden=asNearBottom(c);b.lastElementChild.textContent=AS.unread?'Новое сообщение':'К последним';
+}
+function asScroll(){
+  var c=document.getElementById('chat');if(!c)return;
+  AS.follow=true;AS.unread=false;c.scrollTop=c.scrollHeight;asJumpState(c);
+}
+function asCapture(){
+  var c=document.getElementById('chat');if(!c||c.getAttribute('data-user')!==ME)return null;
+  var state={top:c.scrollTop,follow:asNearBottom(c),count:+c.getAttribute('data-count'),anchor:null,offset:0};
+  var top=c.getBoundingClientRect().top,ms=c.querySelectorAll('[data-mi]');
+  for(var i=0;i<ms.length;i++){var r=ms[i].getBoundingClientRect();if(r.bottom>top+1){state.anchor=ms[i].getAttribute('data-mi');state.offset=r.top-top;break;}}
+  return state;
+}
+function asViewport(){
+  if(!document.body.classList.contains('chat-open'))return;
+  var vv=window.visualViewport,h=vv?vv.height:window.innerHeight,w=window.innerWidth;
+  if(Math.abs(w-AS.viewportWidth)>60){AS.viewportBase=window.innerHeight;AS.viewportWidth=w;}
+  AS.viewportBase=Math.max(AS.viewportBase,h,window.innerHeight);
+  var focused=document.activeElement&&document.activeElement.id==='asin';
+  var keyboard=focused&&AS.viewportBase-h>150;
+  document.body.classList.toggle('as-keyboard',keyboard);
+  var nav=document.querySelector('.bnav'),root=document.documentElement;
+  root.style.setProperty('--as-height',h+'px');root.style.setProperty('--as-top',(vv?vv.offsetTop:0)+'px');
+  root.style.setProperty('--as-nav-height',(nav&&!keyboard?nav.getBoundingClientRect().height:0)+'px');
+  if(AS.follow)asScroll();
+}
+function asRestore(state){
+  var c=document.getElementById('chat');if(!c)return;
+  AS.follow=!state||state.follow||AS.forceBottom;
+  if(AS.follow){AS.unread=false;asScroll();}
+  else{
+    c.scrollTop=state.top;
+    var anchor=state.anchor!==null?c.querySelector('[data-mi="'+state.anchor+'"]'):null;
+    if(anchor)c.scrollTop+=anchor.getBoundingClientRect().top-c.getBoundingClientRect().top-state.offset;
+    AS.unread=AS.unread||+c.getAttribute('data-count')>state.count;asJumpState(c);
+  }
+  AS.forceBottom=false;
+  c.addEventListener('scroll',function(){AS.follow=asNearBottom(c);if(AS.follow)AS.unread=false;asJumpState(c);},{passive:true});
+  if(window.ResizeObserver){AS.observer=new ResizeObserver(function(){if(AS.follow)asScroll();else asJumpState(c);});AS.observer.observe(c);AS.observer.observe(c.firstElementChild);}
+  asViewport();
+}
+window.addEventListener('resize',asViewport);
+if(window.visualViewport){visualViewport.addEventListener('resize',asViewport);visualViewport.addEventListener('scroll',asViewport);}
 function listIdByName(n){if(!n)return null;var l=D.lists.filter(function(x){return x.name.toLowerCase()===String(n).toLowerCase();})[0];return l?l.id:null;}
 async function asAddTask(mi,ti){var m=AS.msgs[mi],t=m&&m.tasks[ti];if(!t||t._added)return;
   var ok=/^\d{4}-\d{2}-\d{2}$/.test(t.due_date||''),tm=/^\d{2}:\d{2}$/.test(t.due_time||'');
@@ -668,15 +716,19 @@ function render(){
   if(!ME)return;
   var app=document.getElementById('app');
   var mainEl=app.querySelector('.main'),scroll=mainEl?mainEl.scrollTop:0,pc=isPC();lastPC=pc;
+  var chatState=asCapture(),chatOpen=UI.view==='assistant'&&SET.assistant;
+  if(AS.observer){AS.observer.disconnect();AS.observer=null;}
+  document.body.classList.toggle('chat-open',!!chatOpen);if(!chatOpen)document.body.classList.remove('as-keyboard');
   var ae=document.activeElement,keep=null;
   if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA')&&ae.closest('#app')){var fm=ae.form;keep={id:ae.id,cf:fm&&fm.getAttribute('data-cform'),sf:fm&&fm.getAttribute('data-subform'),v:ae.value,pos:ae.selectionStart};}
   var detail='';
   if(pc&&wide()&&(UI.sel||UI.view==='tasks'||UI.view==='inbox')){var t=UI.sel&&findTask(UI.sel);detail=t?'<aside class="detail" aria-label="Задача">'+detailHead(t)+'<div class="sb">'+taskDetail(t)+'</div><div class="sf">'+taskActions(t)+'</div></aside>':'<aside class="detail empty">Выбери задачу, чтобы увидеть подробности</aside>';}
-  app.innerHTML='<div class="shell">'+(pc?'<aside class="side">'+sidebar()+'</aside>':'')+'<main class="main"><div class="wrap">'+mainContent()+'</div></main>'+detail+'</div>'+(pc?'':bottomNav()+(UI.view==='tasks'||UI.view==='calendar'?'<button class="fab" data-a="add" aria-label="Новая задача">'+I('plus')+'</button>':''));
+  app.innerHTML='<div class="shell">'+(pc?'<aside class="side">'+sidebar()+'</aside>':'')+'<main class="main'+(chatOpen?' chat-main':'')+'"><div class="wrap'+(chatOpen?' chat-wrap':'')+'">'+mainContent()+'</div></main>'+detail+'</div>'+(pc?'':bottomNav()+(UI.view==='tasks'||UI.view==='calendar'?'<button class="fab" data-a="add" aria-label="Новая задача">'+I('plus')+'</button>':''));
   var m2=app.querySelector('.main');if(m2)m2.scrollTop=scroll;
   bindMain();
   if(keep){var el=keep.id?document.getElementById(keep.id):keep.cf?document.querySelector('form[data-cform="'+keep.cf+'"] input'):keep.sf?document.querySelector('form[data-subform="'+keep.sf+'"] input'):null;
-    if(el){el.value=keep.v;el.focus();try{el.setSelectionRange(keep.pos,keep.pos);}catch(x){}}}
+    if(el){el.value=keep.v;try{el.focus({preventScroll:true});}catch(x){el.focus();}try{el.setSelectionRange(keep.pos,keep.pos);}catch(x){}}}
+  if(chatOpen)asRestore(chatState);
   bindDetailForms(document);
   var sa=document.activeElement;if(UI.sheet&&!(sa&&sa.closest&&sa.closest('#sheet')&&(sa.tagName==='INPUT'||sa.tagName==='TEXTAREA')))renderSheet();
 }
@@ -687,8 +739,10 @@ function bindMain(){
       if(!p.due_date){var dd={};defaultsInto(dd);p.due_date=dd.due_date;if(!p.due_time){p.due_time=dd.due_time;p.remind_every=dd.due_time?dd.remind_every:0;p.remind_times=dd.remind_times;}}
       if(p.recur!=='none'&&!p.due_date)p.due_date=T();
       if(UI.filter!=='all')p.list_id=UI.filter;UI.quick='';qi.value='';var r=await createTask(p);if(r)toast('Добавлено: '+r.title+(r.due_date?', '+dayWord(r.due_date).toLowerCase()+(r.due_time?' в '+r.due_time:''):''));});}
-  var af=document.getElementById('asform');if(af){var ai=document.getElementById('asin');ai.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();af.requestSubmit?af.requestSubmit():af.dispatchEvent(new Event('submit',{cancelable:true}));}});ai.addEventListener('input',function(){ai.style.height='42px';var sh=ai.scrollHeight;ai.style.height=Math.max(42,Math.min(sh,160))+'px';});
-    af.addEventListener('submit',function(e){e.preventDefault();var v=ai.value.trim(),ph=window.HEALTH?HEALTH.asPendingPaths():[];if((!v&&!ph.length)||AS.busy)return;if(window.HEALTH&&HEALTH.asUploading()){toast('Фото ещё загружается, секунду');return;}ai.value='';var pics=window.HEALTH?HEALTH.asTake():[];askAssistant('chat',v||'Разбери фото',null,pics.length?{photos:pics}:null);});}
+  var af=document.getElementById('asform');if(af){var ai=document.getElementById('asin');var sizeInput=function(){ai.style.height='42px';ai.style.height=Math.max(42,Math.min(ai.scrollHeight,160))+'px';};sizeInput();
+    ai.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();af.requestSubmit?af.requestSubmit():af.dispatchEvent(new Event('submit',{cancelable:true}));}});
+    ai.addEventListener('input',function(){AS.draft=ai.value;sizeInput();if(AS.follow)asScroll();});ai.addEventListener('focus',asViewport);ai.addEventListener('blur',asViewport);
+    af.addEventListener('submit',function(e){e.preventDefault();var v=ai.value.trim(),ph=window.HEALTH?HEALTH.asPendingPaths():[];if((!v&&!ph.length)||AS.busy)return;if(window.HEALTH&&HEALTH.asUploading()){toast('Фото ещё загружается, секунду');return;}ai.value='';AS.draft='';var pics=window.HEALTH?HEALTH.asTake():[];askAssistant('chat',v||'Разбери фото',null,pics.length?{photos:pics}:null);});}
   var nq=document.getElementById('nq');if(nq)nq.addEventListener('input',function(){UI.q=nq.value;document.getElementById('nlist').innerHTML=notesList();});
 }
 
@@ -1130,6 +1184,7 @@ var A={
   htime:function(v){var a=UI.sheet.times=UI.sheet.times||[],i=a.indexOf(v);if(i>=0)a.splice(i,1);else a.push(v);a.sort();renderSheet();},
   asOn:function(){SET.assistant=true;saveSettings();render();},
   asClear:function(){if(!confirm('Очистить переписку с помощником?'))return;AS.msgs=[];asSave();render();},
+  asLatest:function(){asScroll();},
   asPlan:function(){askAssistant('plan','План на сегодня');},
   asNotes:function(){askAssistant('notes','Разобрать заметки');},
   asFood:function(){askAssistant('food','Итоги питания за сегодня');},
