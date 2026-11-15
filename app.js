@@ -531,6 +531,7 @@ function diaryView(){
 function habRate(h){var t=T(),n=0,d=0;for(var i=0;i<30;i++){var k=addDays(t,-i);if(k<h.started_on||!sched(h,k))continue;n++;if(hDone(h,k))d++;}return n?Math.round(d*100/n):0;}
 function habitsView(){
   var h='<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">Привычки</h1></div><button class="btn2" data-a="habNew">'+I('plus')+'Новая</button></div>';
+  if(window.PLANBOT)h+=PLANBOT.habitsPanel();
   var hs=D.habits.filter(function(x){return !x.finished;});
   if(!hs.length)return h+'<div class="empty">Привычек пока нет. Нажми «Новая».</div>';
   var t=T(),ND=isPC()?14:7,mon=addDays(t,-(ND-1));
@@ -577,6 +578,7 @@ function startVoice(target){
 
 /* помощник */
 var AS={msgs:[],busy:false,loaded:null,draft:'',follow:true,unread:false,forceBottom:false,observer:null,viewportBase:0,viewportWidth:0};
+var AS_TASK_ADDING=new WeakSet();
 function asKey(){return 'zadachi-assistant-'+ME;}
 function asLoad(){if(AS.loaded===ME)return;AS.loaded=ME;AS.draft='';AS.unread=false;AS.forceBottom=true;try{AS.msgs=JSON.parse(localStorage.getItem(asKey())||'[]');}catch(e){AS.msgs=[];}}
 function asSave(){try{localStorage.setItem(asKey(),JSON.stringify(AS.msgs.slice(-40)));}catch(e){}}
@@ -596,16 +598,18 @@ function assistantView(){
     if(m.role==='user'){h+='<div class="m u" data-mi="'+mi+'">'+(m.photos&&m.photos.length&&window.HEALTH?HEALTH.asPhotos(m.photos):'')+nl(m.content)+'</div>';return;}
     if(m.error){h+='<div class="m a err" data-mi="'+mi+'">'+nl(m.content)+'</div>';return;}
     h+='<div class="m a" data-mi="'+mi+'">'+nl(m.content);
+    if(m.plan_title&&window.PLANBOT)h+=PLANBOT.planIntro(m,mi);
     (m.questions||[]).forEach(function(q2){h+='<div class="q">'+I('msg')+'<span>'+esc(q2)+'</span></div>';});
     var open=(m.tasks||[]).filter(function(t){return !t._added;}).length;
     (m.tasks||[]).forEach(function(t,ti){
       var when=t.due_date?dayWord(t.due_date)+(t.due_time?' в '+t.due_time:''):'без срока';
-      h+='<div class="prop"><div style="flex:1;min-width:0"><b>'+esc(t.title)+'</b><div class="meta"><span>'+esc(when)+'</span>'+(t.list?'<span>'+esc(t.list)+'</span>':'')+(t.recur&&t.recur!=='none'?'<span>'+I('repeat')+esc(recurText({recur:t.recur,recur_n:2,recur_days:[]}))+'</span>':'')+'</div></div>'+(t._added?'<span class="badge">добавлено</span>':'<button class="btn2" data-a="asAdd" data-v="'+mi+':'+ti+'">'+I('plus')+'Добавить</button>')+'</div>';
+      h+='<div class="prop">'+(m.plan_title&&window.PLANBOT?PLANBOT.check(mi,'task',ti,t):'')+'<div style="flex:1;min-width:0"><b>'+esc(t.title)+'</b><div class="meta"><span>'+esc(when)+'</span>'+(t.list?'<span>'+esc(t.list)+'</span>':'')+(t.recur&&t.recur!=='none'?'<span>'+I('repeat')+esc(recurText({recur:t.recur,recur_n:2,recur_days:[]}))+'</span>':'')+'</div></div>'+(t._added?'<span class="badge">добавлено</span>':'<button class="btn2" data-a="asAdd" data-v="'+mi+':'+ti+'"'+(window.PLANBOT&&PLANBOT.busy(m)?' disabled':'')+'>'+I('plus')+'Добавить</button>')+'</div>';
     });
     (m.moves||[]).forEach(function(mv,vi){var tk=findTask(mv.task_id);if(!tk)return;
       h+='<div class="prop"><div style="flex:1;min-width:0"><b>'+esc(tk.title)+'</b><div class="meta"><span>'+I('move')+(mv.due_date?'на '+dayWord(mv.due_date).toLowerCase():'без срока')+'</span>'+(mv.reason?'<span>'+esc(mv.reason)+'</span>':'')+'</div></div>'+(mv._done?'<span class="badge">перенесено</span>':'<button class="btn2" data-a="asMove" data-v="'+mi+':'+vi+'">Перенести</button>')+'</div>';});
     if(window.HEALTH)h+=HEALTH.asCards(m,mi);
-    if(open>1)h+='<button class="btn2" style="margin-top:8px" data-a="asAddAll" data-v="'+mi+'">Добавить все ('+open+')</button>';
+    if(m.plan_title&&window.PLANBOT)h+=PLANBOT.planFooter(m,mi);
+    else if(open>1)h+='<button class="btn2" style="margin-top:8px" data-a="asAddAll" data-v="'+mi+'">Добавить все ('+open+')</button>';
     h+='</div>';
   });
   if(AS.busy)h+='<div class="m a muted">Думаю…</div>';
@@ -620,14 +624,15 @@ async function askAssistant(mode,label,noteId,opts){
     if(m.role==='assistant'&&m.entries&&m.entries.length&&window.HEALTH)c+='\n(предложено записать: '+HEALTH.asSummary(m)+')';
     return{role:m.role,content:c};});
   AS.msgs.push({role:'user',content:label,photos:photos});
-  if(mode==='chat')history.push({role:'user',content:label});
+  if(mode==='chat'||mode==='support'||mode==='habits')history.push({role:'user',content:label});
   AS.busy=true;AS.forceBottom=true;asSave();UI.view='assistant';render();
   try{
     var images=photos.length&&window.HEALTH?await HEALTH.asImages(photos):[];
     var r=await sb.functions.invoke(FN_NAME,{body:{mode:mode,messages:history.slice(-12),today:T(),now:fmtLong(T())+', '+nowHM(),note_id:noteId||null,images:images,health_ctx:window.WELL?WELL.summaryText():''}});
     if(r.error){var msg=r.error.message;try{var j=await r.error.context.json();if(j&&j.error)msg=j.error;}catch(x){}throw new Error(msg);}
-    var a=r.data||{};AS.msgs.push({role:'assistant',content:a.reply||'Готово.',tasks:a.tasks||[],moves:a.moves||[],questions:a.questions||[],entries:window.HEALTH?HEALTH.asEntries(a,photos):[]});
-    var auto=opts&&opts.autoAdd&&(a.tasks||[]).length&&!(a.questions||[]).length&&a.tasks.length<=5;
+    var a=r.data||{},es=window.HEALTH?HEALTH.asEntries(a,photos):[],hasItems=(a.tasks||[]).length||es.length;
+    AS.msgs.push({role:'assistant',content:a.reply||'Готово.',plan_title:hasItems?(a.plan_title||((mode==='support'||mode==='habits')?'Предложенный план':'')):'',tasks:a.tasks||[],moves:a.moves||[],questions:a.questions||[],entries:es});
+    var auto=opts&&opts.autoAdd&&!a.plan_title&&!(window.PLANBOT&&PLANBOT.hasProposals(a))&&(a.tasks||[]).length&&!(a.questions||[]).length&&a.tasks.length<=5;
   }catch(e){AS.msgs.push({role:'assistant',error:true,content:'Не получилось: '+(e.message||'ошибка связи')+(/Failed to send|fetch/i.test(e.message||'')?'. Проверь, что функция помощника (assistant) опубликована в Supabase.':'')});}
   AS.busy=false;asSave();render();
   if(typeof auto!=='undefined'&&auto){var mi=AS.msgs.length-1,n=0;for(var i=0;i<AS.msgs[mi].tasks.length;i++){if(await asAddTask(mi,i))n++;}if(n)toast(n===1?'Задача добавлена: '+AS.msgs[mi].tasks[0].title:'Добавлено задач: '+n);}
@@ -679,10 +684,10 @@ function asRestore(state){
 window.addEventListener('resize',asViewport);
 if(window.visualViewport){visualViewport.addEventListener('resize',asViewport);visualViewport.addEventListener('scroll',asViewport);}
 function listIdByName(n){if(!n)return null;var l=D.lists.filter(function(x){return x.name.toLowerCase()===String(n).toLowerCase();})[0];return l?l.id:null;}
-async function asAddTask(mi,ti){var m=AS.msgs[mi],t=m&&m.tasks[ti];if(!t||t._added)return;
+async function asAddTask(mi,ti){var m=AS.msgs[mi],t=m&&m.tasks[ti];if(!t||t._added||AS_TASK_ADDING.has(t))return;AS_TASK_ADDING.add(t);try{
   var ok=/^\d{4}-\d{2}-\d{2}$/.test(t.due_date||''),tm=/^\d{2}:\d{2}$/.test(t.due_time||'');
   var r=await createTask({title:String(t.title).slice(0,200),details:t.details||'',due_date:ok?t.due_date:null,due_time:ok&&tm?t.due_time:null,remind_every:ok&&tm?10:0,remind_times:ok&&tm?3:0,list_id:listIdByName(t.list),prio:Math.max(0,Math.min(3,+t.prio||0)),recur:ok&&t.recur&&RECUR.some(function(x){return x[0]===t.recur;})&&t.recur!=='days'?t.recur:'none'});
-  if(r){t._added=true;asSave();render();}return r;}
+  if(r){t._added=true;asSave();render();}return r;}finally{AS_TASK_ADDING.delete(t);}}
 
 /* каркас */
 function sidebar(){
@@ -1296,7 +1301,7 @@ window.__app={A:A,UI:UI,D:D,parseQuick:parseQuick,nextOcc:nextOcc,
   T:T,addDays:addDays,diff:diff,fromKey:fromKey,fmtLong:fmtLong,fmtDM:fmtDM,dayWord:dayWord,esc:esc,uid:uid,plural:plural,I:I,nowHM:nowHM,
   toast:toast,err:err,q:q,sb:sb,SUPA_URL:SUPA_URL,SUPA_KEY:SUPA_KEY,render:render,renderSheet:renderSheet,closeSheet:closeSheet,
   setMark:setMark,tgt:tgt,sched:sched,cnt:cnt,COLORS:COLORS,WD:WD,askAssistant:askAssistant,
-  AS:AS,asSave:asSave,createTask:createTask,patchTask:patchTask,completeTask:completeTask,reopenTask:reopenTask,deleteTask:deleteTask,findTask:findTask,saveSettings:saveSettings};
+  AS:AS,asSave:asSave,asAddTask:asAddTask,createTask:createTask,patchTask:patchTask,completeTask:completeTask,reopenTask:reopenTask,deleteTask:deleteTask,findTask:findTask,saveSettings:saveSettings};
 Object.defineProperty(window.__app,'ME',{get:function(){return ME;}});
 Object.defineProperty(window.__app,'SET',{get:function(){return SET;}});
 })();

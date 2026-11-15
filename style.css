@@ -284,6 +284,17 @@ body.pc .dh{font-size:46px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
 /* ===== Помощник ===== */
+.pb-request{margin:16px 0;padding:16px;border:1px solid var(--line);border-radius:var(--r);background:var(--surf);display:flex;flex-direction:column;gap:10px}
+.pb-request>.muted{font-size:14px;line-height:1.45}
+.pb-request textarea{min-height:84px;resize:vertical}
+.pb-pick{display:flex;align-items:center;justify-content:center;flex:0 0 26px;min-height:38px;cursor:pointer}
+.pb-pick input{width:20px;height:20px;accent-color:var(--acc);cursor:pointer}
+.pb-title{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.pb-title>b,.pb-title>span{display:block}
+.pb-title>span,.pb-apply>.muted{font-size:12px;line-height:1.4;margin-top:6px;color:var(--muted)}
+.pb-apply{margin-top:14px;display:flex;flex-direction:column;align-items:flex-start}
+.pb-apply .btn{min-height:44px;height:auto;padding:12px 16px}
+@media(max-width:520px){.m .hentry{flex-wrap:wrap}.m .hentry .hebtns{flex-basis:100%;align-items:flex-start;padding-left:34px}.m .prop>.btn2{max-width:100%;white-space:normal}}
 .bnav .in{grid-template-columns:repeat(5,1fr)}
 .chat{display:flex;flex-direction:column;gap:12px;margin-top:16px}
 .chat .m{max-width:88%;padding:12px 14px;border-radius:16px;line-height:1.5;font-size:15px;word-break:break-word}
