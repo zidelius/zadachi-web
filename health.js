@@ -171,8 +171,8 @@
     });
     for (var u = 0; u < (s._up || 0); u++) h += '<div class="hph hload" role="status" aria-label="Загружаю фото"><i class="spin"></i><span>Загружаю…</span></div>';
     if ((s.photos || []).length + (s._up || 0) < 4) {
-      h += '<label class="hadd">' + CAM + '<span>' + 'Снять' + '</span><input type="file" accept="image/*" capture="environment" data-hfile hidden></label>';
-      h += '<label class="hadd">' + I('inbox') + '<span>Галерея</span><input type="file" accept="image/*" multiple data-hfile hidden></label>';
+      h += '<label class="hadd">' + CAM + '<span>' + 'Снять' + '</span><input type="file" accept="image/*" capture="environment" data-hfile class="sr-only-input" aria-label="Прикрепить фото"></label>';
+      h += '<label class="hadd">' + I('inbox') + '<span>Галерея</span><input type="file" accept="image/*" multiple data-hfile class="sr-only-input" aria-label="Прикрепить фото"></label>';
     }
     return h + '</div>';
   }
@@ -1062,7 +1062,7 @@
 
   /* =================== ПОМОЩНИК: фото и предложенные записи =================== */
   var PEND = [], PEND_UP = 0;   // фото, прикреплённые к ещё не отправленному сообщению
-  function asAttach() { return '<label class="iconbtn asatt" aria-label="Прикрепить фото">' + CAM + '<input type="file" accept="image/*" multiple data-asfile hidden></label>'; }
+  function asAttach() { return '<label class="iconbtn asatt" aria-label="Прикрепить фото">' + CAM + '<input type="file" accept="image/*" multiple data-asfile class="sr-only-input" aria-label="Прикрепить фото к сообщению"></label>'; }
   function asPending() {
     if (!PEND.length && !PEND_UP) return '';
     return '<div class="aspend">' + PEND.map(function (p, i) { return '<div class="hph sm"><img data-ph="' + esc(p) + '" alt="Фото"><button type="button" data-a="hAsPhDel" data-v="' + i + '" aria-label="Убрать фото">' + I('x') + '</button></div>'; }).join('') + (function () { var o = ''; for (var k = 0; k < PEND_UP; k++) o += '<div class="hph sm hload" role="status" aria-label="Загружаю фото"><i class="spin"></i></div>'; return o; })() + '</div>';
@@ -1091,7 +1091,7 @@
     rerenderKeep();
   }
 
-  var ETITLE = { meal: 'Питание', workout: 'Тренировки', body: 'Замеры', pantry: 'Холодильник', note: 'Заметки', cabinet: 'Аптечка', intake: 'Приём', lab: 'Анализы', habit:'Привычки', habit_update:'Изменение привычки', habit_mark:'Отметка привычки', support:'Поддержка' };
+  var ETITLE = { meal: 'Питание', workout: 'Тренировки', body: 'Замеры', pantry: 'Холодильник', note: 'Заметки', cabinet: 'Аптечка', intake: 'Приём', lab: 'Анализы', growth_goal:'Развитие', habit:'Привычки', habit_update:'Изменение привычки', habit_mark:'Отметка привычки', support:'Поддержка' };
   function entryOwner(t) { return window.PLANBOT&&PLANBOT.owns(t)?PLANBOT:window.WELL&&WELL.owns(t)?WELL:null; }
   function asEntries(a, photos) {
     var out = [], used = false;
@@ -1122,7 +1122,7 @@
     return { title: d.title, meta: [], note: String(d.body || '').slice(0, 140) };
   }
   var BTN = { meal: function (d) { return d.planned ? 'Запланировать' : 'Записать в питание'; }, workout: function (d) { return d.planned ? 'Запланировать' : 'Записать тренировку'; }, body: function () { return 'Записать замер'; }, pantry: function (d) { return d.kind === 'spice' ? 'В приправы' : 'В холодильник'; }, note: function () { return 'Создать заметку'; }, cabinet: function () { return 'В аптечку'; }, intake: function () { return 'Записать приём'; }, lab: function () { return 'Записать анализы'; } };
-  BTN.habit=function(){return 'Создать привычку';};BTN.habit_update=function(){return 'Применить изменения';};BTN.habit_mark=function(){return 'Подтвердить отметку';};BTN.support=function(){return 'Включить поддержку';};
+  BTN.growth_goal=function(){return 'Создать цель';};BTN.habit=function(){return 'Создать привычку';};BTN.habit_update=function(){return 'Применить изменения';};BTN.habit_mark=function(){return 'Подтвердить отметку';};BTN.support=function(){return 'Включить поддержку';};
   var DONE ={ ok: 'записано', note: 'в заметках', task: 'в задачах', exists:'уже есть' };
   var AS_ENTRY_ADDING=new WeakSet();
   function asCards(m, mi) {
@@ -1150,13 +1150,19 @@
   }
 
   /* занесение предложенных записей по разделам */
-  async function addMealFrom(d, photos) {
+  async function saveAssistantRow(table,row,entry,slot){return entry&&window.PLANBOT?PLANBOT.saveRow(table,row,entry,slot||'record'):q(sb.from(table).insert(row).select().single());}
+  async function assistantPlanTask(prefix,d,entry){
+    if(!entry||!window.PLANBOT)return makeTask(prefix,d.title,d.day||T(),d.at);
+    var rf=remindFields(d.at),row=await PLANBOT.saveRow('tasks',{title:taskTitle(prefix,d.title,d.at,rf),due_date:d.day||T(),due_time:rf.due_time,remind_every:rf.remind_every,remind_times:rf.remind_times,status:'active',prio:0,recur:'none',recur_n:2,recur_days:[],subs:[]},entry,'plannedTask');
+    if(!findTask(row.id))X.D.tasks.push(row);return row.id;
+  }
+  async function addMealFrom(d, photos, entry) {
     var k = KIND[d.kind] || KIND.snack, day = d.day || T();
     var row = { owner: X.ME, day: day, at: d.at || null, kind: d.kind in KIND ? d.kind : 'snack', title: d.title, grams: d.grams, kcal: d.kcal, protein: d.protein, fat: d.fat, carbs: d.carbs, note: d.note || '', photos: photos || [], planned: !!d.planned, ai: { source: 'assistant' } };
-    if (row.planned) row.task_id = await makeTask(k.name, row.title, row.day, row.at);
-    var saved = await q(sb.from('meals').insert(row).select().single()); H.meals.push(saved); HUI.day = saved.day;
+    if (row.planned) row.task_id = await assistantPlanTask(k.name,d,entry);
+    var saved = await saveAssistantRow('meals',row,entry); if(!H.meals.some(function(x){return x.id===saved.id;}))H.meals.push(saved); HUI.day = saved.day;
   }
-  async function addWorkoutFrom(d, photos) {
+  async function addWorkoutFrom(d, photos, entry) {
     var day = d.day || T();
     var row = { owner: X.ME, day: day, at: d.at || null, kind: d.kind in FKIND ? d.kind : 'other', title: d.title, minutes: d.minutes, kcal: d.kcal, note: d.note || '', photos: photos || [], metrics: d.metrics || [], exercises: cleanExercises(d.exercises), planned: !!d.planned, ai: { source: 'assistant' } };
     /* страховка: силовая без упражнений (ИИ иногда их не заполняет) - добираем из фото или из текста записи */
@@ -1173,8 +1179,8 @@
       } catch (e) { /* без упражнений тоже сохраняем */ }
     }
     if (!row.planned) await fillMuscles(row.exercises);
-    if (row.planned) row.task_id = await makeTask('Тренировка', row.title, row.day, row.at);
-    var saved = await q(sb.from('workouts').insert(row).select().single()); H.workouts.push(saved);
+    if (row.planned) row.task_id = await assistantPlanTask('Тренировка',d,entry);
+    var saved = await saveAssistantRow('workouts',row,entry); if(!H.workouts.some(function(x){return x.id===saved.id;}))H.workouts.push(saved);
   }
   /* без мышц у упражнения карта нагрузки остаётся пустой: берём мышцы из истории или просим ИИ */
   async function fillMuscles(exs) {
@@ -1220,8 +1226,8 @@
         if(!savedTask)throw new Error('Задачу не удалось сохранить. Предложение осталось доступным.');
         e._done = 'task';
       } else {
-        if (e.t === 'meal') await addMealFrom(e.d, e.photos);
-        else if (e.t === 'workout') await addWorkoutFrom(e.d, e.photos);
+        if (e.t === 'meal') await addMealFrom(e.d, e.photos, e);
+        else if (e.t === 'workout') await addWorkoutFrom(e.d, e.photos, e);
         else if (e.t === 'body') await addBodyFrom(e.d, e.photos);
         else if (e.t === 'pantry') await addPantryFrom(e.d);
         else if (e.t === 'note') await addNoteFrom(e.d.title, e.d.body);

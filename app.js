@@ -102,6 +102,7 @@ async function loadAll(){
   try{SET.layout=localStorage.getItem('zd_layout')||'auto';}catch(e){SET.layout='auto';}
   if(window.HEALTH)await HEALTH.load();
   if(window.WELL)await WELL.load();
+  if(window.GROWTH)await GROWTH.load();
 }
 var reloadTimer=null;
 function reloadSoon(){clearTimeout(reloadTimer);reloadTimer=setTimeout(function(){loadAll().then(render).catch(function(){});},400);}
@@ -131,6 +132,20 @@ function subscribe(){
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'comments'},function(p){
       var c=p.new;if(D.comments[c.task_id]&&!D.comments[c.task_id].some(function(x){return x.id===c.id;})){D.comments[c.task_id].push(c);render();}
     })
+    .on('postgres_changes',{event:'*',schema:'public',table:'habits'},reloadSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'habit_marks'},reloadSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'task_log'},reloadSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'meals'},reloadSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'workouts'},reloadSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'body_log'},reloadSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'pantry'},reloadSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'cabinet'},reloadSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'intakes'},reloadSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'h_plans'},reloadSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'labs'},reloadSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'growth_goals'},reloadSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'skill_sessions'},reloadSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'daily_checkins'},reloadSoon)
     .subscribe();
 }
 document.addEventListener('visibilitychange',function(){if(!document.hidden&&ME)reloadSoon();});
@@ -139,13 +154,14 @@ document.addEventListener('visibilitychange',function(){if(!document.hidden&&ME)
 var saveSetTimer=null;
 function saveSettings(){try{localStorage.setItem('zd_layout',SET.layout||'auto');}catch(e){}applyTheme();clearTimeout(saveSetTimer);saveSetTimer=setTimeout(function(){var out=Object.assign({},SET);delete out.layout;q(sb.from('profiles').update({settings:out}).eq('id',ME)).catch(err);},500);}
 function lum(hex){var h=hex.replace('#','');if(h.length===3)h=h.split('').map(function(c){return c+c;}).join('');var r=parseInt(h.substr(0,2),16)/255,g=parseInt(h.substr(2,2),16)/255,b=parseInt(h.substr(4,2),16)/255;function f(c){return c<=.03928?c/12.92:Math.pow((c+.055)/1.055,2.4);}return .2126*f(r)+.7152*f(g)+.0722*f(b);}
+function onColor(hex){var L;try{L=lum(hex);}catch(e){return '#FFFFFF';}if(!Number.isFinite(L))return '#FFFFFF';var white=1.05/(L+.05),ink=(L+.05)/(.0069954102+.05);return white>=4.5?'#FFFFFF':ink>=4.5?'#141414':'#000000';}
 function isDark(){return SET.theme==='dark'||(SET.theme==='auto'&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches);}
 function applyTheme(){
   var dark=isDark(),root=document.documentElement;root.setAttribute('data-theme',dark?'dark':'light');
   var acc=SET.accent||'#141414';var L;try{L=lum(acc);}catch(e){acc='#141414';L=0;}
   if(dark&&L<0.05){acc='#F2F1EC';L=0.9;}
   if(!dark&&L>0.85){acc='#141414';L=0;}
-  root.style.setProperty('--acc',acc);root.style.setProperty('--on-acc',L>0.35?'#141414':'#FFFFFF');
+  root.style.setProperty('--acc',acc);root.style.setProperty('--on-acc',onColor(acc));
   var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',dark?'#0D0D0C':'#F6F5F1');
   document.body.classList.toggle('pc',isPC());
 }
@@ -397,7 +413,7 @@ function habitsRow(){
   hs.forEach(function(h){
     var c=cnt(h,t),g=tgt(h),done=c>=g,today=sched(h,t),lab=h.paused?'пауза':!today?'отдых':c+'/'+g;
     var ring='';if(!done){var r=25,C=2*Math.PI*r,fr=c/g;ring='<svg class="bg" viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="'+r+'" fill="none" stroke="var(--line)" stroke-width="2.5"/>'+(fr>0?'<circle cx="28" cy="28" r="'+r+'" fill="none" stroke="'+esc(h.color)+'" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="'+(C*fr).toFixed(1)+' '+C.toFixed(1)+'" transform="rotate(-90 28 28)"/>':'')+'</svg>';}
-    out+='<div class="hab"><button class="ring'+(done?' done':'')+(h.paused||!today?' off':'')+'" style="--hc:'+esc(h.color)+'" data-a="habTap" data-lp="habit" data-id="'+h.id+'" aria-label="'+esc(h.name)+', '+lab+'">'+ring+I(h.icon)+'</button><div class="nm">'+esc(h.name)+'<b>'+lab+'</b></div></div>';
+    out+='<div class="hab"><button class="ring'+(done?' done':'')+(h.paused||!today?' off':'')+'" style="--hc:'+esc(h.color)+';--on-hc:'+onColor(h.color)+'" data-a="habTap" data-lp="habit" data-id="'+h.id+'" aria-label="'+esc(h.name)+', '+lab+'">'+ring+I(h.icon)+'</button><div class="nm">'+esc(h.name)+'<b>'+lab+'</b></div></div>';
   });
   out+='<div class="hab add"><button class="ring" data-a="habNew" aria-label="Новая привычка">'+I('plus')+'</button><div class="nm">Новая</div></div></div>';
   return out;
@@ -448,6 +464,7 @@ function tasksView(){
   var out='<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">'+(fl?esc(fl.name):'Задачи')+'</h1></div>'+(isPC()?'':'<button class="iconbtn" data-a="settings" aria-label="Настройки">'+I('gear')+'</button>')+'</div>';
   out+='<form class="quick" id="quick" autocomplete="off"><span class="muted">'+I('plus')+'</span><input id="qin" placeholder="Новая задача, например «завтра в 19:00 купить хлеб»" aria-label="Быстро добавить задачу" value="'+esc(UI.quick)+'">'+micBtn('q')+'<button class="iconbtn" type="button" data-a="add" aria-label="Подробнее">'+I('edit')+'</button></form>';
   if(isPC()&&!fl)out+=dashTiles(groups,todays,openN);
+  if(!fl&&window.GROWTH)out+=GROWTH.homeCard();
   if(!fl)out+=habitsRow();
   out+=filterChips();
   var names={overdue:'Просрочено',tomorrow:'Завтра',week:'На неделе',later:'Потом',nodate:fl&&fl.hidden?'В списке':'Без срока'};
@@ -624,7 +641,7 @@ async function askAssistant(mode,label,noteId,opts){
     if(m.role==='assistant'&&m.entries&&m.entries.length&&window.HEALTH)c+='\n(предложено записать: '+HEALTH.asSummary(m)+')';
     return{role:m.role,content:c};});
   AS.msgs.push({role:'user',content:label,photos:photos});
-  if(mode==='chat'||mode==='support'||mode==='habits')history.push({role:'user',content:label});
+  if(mode==='chat'||mode==='support'||mode==='habits'||mode==='growth')history.push({role:'user',content:label});
   AS.busy=true;AS.forceBottom=true;asSave();UI.view='assistant';render();
   try{
     var images=photos.length&&window.HEALTH?await HEALTH.asImages(photos):[];
@@ -691,13 +708,14 @@ async function asAddTask(mi,ti){var m=AS.msgs[mi],t=m&&m.tasks[ti];if(!t||t._add
 
 /* каркас */
 function sidebar(){
-  var nav=function(v,icn,t,n){return '<button class="'+(UI.view===v&&(v!=='tasks'||UI.filter==='all')?'on':'')+'" data-a="go" data-v="'+v+'">'+I(icn)+'<span class="l">'+t+'</span>'+(n?'<span class="n">'+n+'</span>':'')+'</button>';};
+  var nav=function(v,icn,t,n){return '<button class="'+(UI.view===v&&(v!=='tasks'||UI.filter==='all')?'on':'')+'" title="'+esc(t)+'" data-a="go" data-v="'+v+'">'+I(icn)+'<span class="l">'+t+'</span>'+(n?'<span class="n">'+n+'</span>':'')+'</button>';};
   var todayN=myTasks().filter(function(t){return !t.done&&!hiddenTask(t)&&groupOf(t)==='today';}).length;
   var grp=function(t,items){return '<div class="nav"><div class="t">'+t+'</div>'+items+'</div>';};
   var h='<div class="logo" style="padding:0 12px"><b>'+I('check')+'</b><span>задачи</span></div><button class="btn sidenew" data-a="add">'+I('plus')+'<span>Новая задача</span></button>'
     +grp('Планирование',nav('tasks','sun','Задачи',todayN||'')+nav('inbox','inbox','Входящие',inbox().length||'')+nav('calendar','cal','Календарь')+nav('habits','drop','Привычки')+nav('diary','book','Дневник'))
     +grp('Тело и здоровье',nav('food','leaf','Питание')+nav('fit','dumb','Тренировки')+nav('well','heart','Здоровье')+nav('support','star','Поддержка'))
-    +grp('Инструменты',nav('notes','note','Заметки')+nav('assistant','spark','Помощник'));  var own=D.lists.filter(function(l){return !isShared(l);}),sh=D.lists.filter(isShared);
+    +grp('Развитие',nav('growth','star','Развитие'))
+    +grp('Инструменты',nav('notes','note','Заметки')+nav('assistant','spark','Помощник')+nav('guide','book','Как пользоваться'));  var own=D.lists.filter(function(l){return !isShared(l);}),sh=D.lists.filter(isShared);
   var li=function(l){var n=myTasks().filter(function(t){return t.list_id===l.id&&!t.done;}).length;return '<button class="'+(UI.view==='tasks'&&UI.filter===l.id?'on':'')+'" data-a="filter" data-v="'+l.id+'"><i class="dot" style="--c:'+esc(l.color)+'"></i><span class="l">'+esc(l.name)+'</span><span class="n">'+(l.hidden?I('eyeoff'):'')+(n||'')+'</span></button>';};
   h+='<div class="nav"><div class="t">Списки</div>'+own.map(li).join('')+'<button data-a="listNew">'+I('plus')+'<span class="l">Новый список</span></button></div>';
   if(sh.length)h+='<div class="nav"><div class="t">Общие</div>'+sh.map(li).join('')+'</div>';
@@ -712,10 +730,10 @@ function bottomNav(){
 function moreView(){
   var n=inbox().length;
   var r=function(v,icn,t,x){return '<button class="lrow" data-a="go" data-v="'+v+'">'+I(icn)+'<b>'+t+'</b>'+(x||'')+I('right')+'</button>';};
-  return '<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">Ещё</h1></div></div><div class="fields" style="margin-top:18px">'+r('inbox','inbox','Входящие',n?'<span class="badge">'+n+'</span>':'')+r('habits','drop','Привычки')+r('food','leaf','Питание')+r('fit','dumb','Тренировки')+r('well','heart','Здоровье')+r('support','star','Поддержка')+r('diary','book','Дневник')+'<button class="lrow" data-a="lists">'+I('list')+'<b>Списки</b>'+I('right')+'</button><button class="lrow" data-a="settings">'+I('gear')+'<b>Настройки</b>'+I('right')+'</button></div>';
+  return '<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">Ещё</h1></div></div><div class="fields" style="margin-top:18px">'+r('growth','star','Развитие')+r('guide','book','Как пользоваться')+r('inbox','inbox','Входящие',n?'<span class="badge">'+n+'</span>':'')+r('habits','drop','Привычки')+r('food','leaf','Питание')+r('fit','dumb','Тренировки')+r('well','heart','Здоровье')+r('support','star','Поддержка')+r('diary','book','Дневник')+'<button class="lrow" data-a="lists">'+I('list')+'<b>Списки</b>'+I('right')+'</button><button class="lrow" data-a="settings">'+I('gear')+'<b>Настройки</b>'+I('right')+'</button></div>';
 }
 function mainContent(){
-  switch(UI.view){case'inbox':return inboxView();case'calendar':return calView();case'diary':return diaryView();case'habits':return habitsView();case'food':return window.HEALTH?HEALTH.foodView():'';case'fit':return window.HEALTH?HEALTH.fitView():'';case'well':return window.WELL?WELL.view():'';case'support':return window.WELL?WELL.supportView():'';case'notes':return notesView();case'more':return moreView();case'assistant':return assistantView();default:return tasksView();}
+  switch(UI.view){case'growth':return window.GROWTH?GROWTH.view():'<div class="empty">Раздел развития загружается. Обнови страницу.</div>';case'guide':return window.APPTOOLS?APPTOOLS.guide():'';case'inbox':return inboxView();case'calendar':return calView();case'diary':return diaryView();case'habits':return habitsView();case'food':return window.HEALTH?HEALTH.foodView():'';case'fit':return window.HEALTH?HEALTH.fitView():'';case'well':return window.WELL?WELL.view():'';case'support':return window.WELL?WELL.supportView():'';case'notes':return notesView();case'more':return moreView();case'assistant':return assistantView();default:return tasksView();}
 }
 function render(){
   if(!ME)return;
@@ -900,8 +918,8 @@ function habitForm(d){
 function habitDetail(hb,off){
   var t=T(),c=cnt(hb,t),done=hDone(hb,t),base=addDays(t,off),mon=addDays(base,-dow(base));
   var sub=hb.paused?'На паузе':!sched(hb,t)?'Сегодня день отдыха':done?'Сегодня сделано':tgt(hb)>1?'Осталось '+(tgt(hb)-c)+' из '+tgt(hb):'Сделай это сегодня';
-  var h='<div class="hdtl" style="--hc:'+esc(hb.color)+'"><div class="ctl"><button class="pm" data-a="habMinus" data-id="'+hb.id+'" aria-label="Минус одно">−</button><button class="big'+(done?' done':'')+'" data-a="habPlus" data-id="'+hb.id+'" aria-label="Плюс одно">'+I(hb.icon)+'<b>'+c+'/'+tgt(hb)+'</b></button><button class="pm" data-a="habPlus" data-id="'+hb.id+'" aria-label="Плюс одно">+</button></div><div style="font-size:21px;font-weight:600">'+esc(hb.name)+'</div><div class="muted">'+sub+'</div></div>';
-  h+='<div style="--hc:'+esc(hb.color)+'"><div class="calnav" style="margin:0 0 10px"><button class="iconbtn" data-a="hwk" data-v="-7" aria-label="Прошлая неделя">'+I('left')+'</button><b>'+fmt(addDays(mon,3),{month:'long'})+'</b><button class="iconbtn" data-a="hwk" data-v="7" aria-label="Следующая неделя"'+(off>=0?' disabled style="opacity:.3"':'')+'>'+I('right')+'</button></div><div class="hweek">';
+  var h='<div class="hdtl" style="--hc:'+esc(hb.color)+';--on-hc:'+onColor(hb.color)+'"><div class="ctl"><button class="pm" data-a="habMinus" data-id="'+hb.id+'" aria-label="Минус одно">−</button><button class="big'+(done?' done':'')+'" data-a="habPlus" data-id="'+hb.id+'" aria-label="Плюс одно">'+I(hb.icon)+'<b>'+c+'/'+tgt(hb)+'</b></button><button class="pm" data-a="habPlus" data-id="'+hb.id+'" aria-label="Плюс одно">+</button></div><div style="font-size:21px;font-weight:600">'+esc(hb.name)+'</div><div class="muted">'+sub+'</div></div>';
+  h+='<div style="--hc:'+esc(hb.color)+';--on-hc:'+onColor(hb.color)+'"><div class="calnav" style="margin:0 0 10px"><button class="iconbtn" data-a="hwk" data-v="-7" aria-label="Прошлая неделя">'+I('left')+'</button><b>'+fmt(addDays(mon,3),{month:'long'})+'</b><button class="iconbtn" data-a="hwk" data-v="7" aria-label="Следующая неделя"'+(off>=0?' disabled style="opacity:.3"':'')+'>'+I('right')+'</button></div><div class="hweek">';
   for(var i=0;i<7;i++){var k=addDays(mon,i);h+='<div><small>'+WD[i]+'</small><button class="'+(hDone(hb,k)?'on ':'')+(k===t?'t ':'')+(sched(hb,k)?'':'skip')+'" data-a="habDay" data-id="'+hb.id+'" data-v="'+k+'"'+(k>t?' disabled':'')+' aria-label="'+fmtLong(k)+'">'+fromKey(k).getDate()+'</button></div>';}
   h+='</div></div><div class="stats"><div><b>'+streak(hb)+'</b><small>подряд</small></div><div><b>'+pct(hb)+'%</b><small>выполнение</small></div><div><b>'+totalDone(hb)+'</b><small>всего</small></div></div>';
   h+='<div class="fields"><div class="fr">'+I('bell')+'<span>Напоминание</span><b style="font-weight:500">'+(hb.remind?[hb.remind].concat(hb.remind_at||[]).join(', ')+(hb.remind_every?', потом каждые '+hb.remind_every+' мин':''):'нет')+'</b></div><div class="fr">'+I('cal')+'<span>Дни</span><b style="font-weight:500">'+daysText(hb)+'</b></div><div class="fr">'+I('star')+'<span>В день</span><b style="font-weight:500">'+tgt(hb)+' '+plural(tgt(hb),'раз','раза','раз')+'</b></div></div>';
@@ -922,6 +940,9 @@ function settingsForm(){
   var me=prof(ME)||{};
   var h='<label><div class="gl">Имя</div><input class="fld" id="s-name" value="'+esc(me.name||'')+'" aria-label="Имя"></label>';
   h+=pushBlock();
+  if(window.NATIVE&&NATIVE.focus)h+=NATIVE.focus.settingsHtml();
+  else h+='<div class="rulebox"><b>Напоминания со свайпом</b><div class="gh">Добровольный режим доступен в обновлённом APK для Android. Он требует отдельного разрешения поверх приложений и не блокирует телефон навсегда. На iPhone и в браузере доступны обычные уведомления.</div></div>';
+  if(window.APPTOOLS)h+=APPTOOLS.settings();
   h+=chips('Тема',[['light','Светлая «Бумага»'],['dark','Тёмная «Ночь»'],['auto','Как в системе']],SET.theme,'s_theme');
   h+='<div><div class="gl">Акцентный цвет</div>'+colorChips(SET.accent,'s_accent',['#141414','#6A5FE0','#3F7D5C','#C0663B','#4A6FB0','#B0476E','#F2B79E'])+'</div>';
   h+=chips('Вид',[['auto','Авто'],['pc','Для ПК'],['phone','Для телефона']],SET.layout,'s_layout','«Авто» выбирает сам по ширине экрана');
@@ -1271,7 +1292,17 @@ document.addEventListener('click',function(e){
   if(lpFired&&(a==='habTap'||a==='open'||a==='chk')){lpFired=false;return;}
   if(A[a]){if(el.tagName==='BUTTON'&&el.type==='submit')e.preventDefault();A[a](el.getAttribute('data-v'),el.getAttribute('data-id'),el,e);}
 });
-document.addEventListener('keydown',function(e){if(e.key==='Escape'){if(TP){TP=null;tpRender();}else if(UI.sheet)userClose();else if(UI.noteId)closeNote();else if(UI.sel){UI.sel=null;render();}}});
+document.addEventListener('keydown',function(e){
+  if(e.key==='Tab'){
+    var dialogs=Array.prototype.slice.call(document.querySelectorAll('[role="dialog"][aria-modal="true"]')).filter(function(d){return d.getClientRects().length;});
+    var modal=dialogs[dialogs.length-1];
+    if(modal){var fs=Array.prototype.slice.call(modal.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]):not([type="hidden"]),textarea:not([disabled]),select:not([disabled]),[tabindex="0"]')).filter(function(el){return el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden';});
+      if(!fs.length){e.preventDefault();modal.setAttribute('tabindex','-1');modal.focus();}
+      else if(!modal.contains(document.activeElement)||e.shiftKey&&document.activeElement===fs[0]||!e.shiftKey&&document.activeElement===fs[fs.length-1]){e.preventDefault();(e.shiftKey?fs[fs.length-1]:fs[0]).focus();}
+    }
+  }
+  if(e.key==='Escape'){if(TP){TP=null;tpRender();}else if(UI.sheet)userClose();else if(UI.noteId)closeNote();else if(UI.sel){UI.sel=null;render();}}
+});
 
 /* =================== Запуск =================== */
 var starting=false;
@@ -1299,7 +1330,7 @@ start();
 window.__app={A:A,UI:UI,D:D,parseQuick:parseQuick,nextOcc:nextOcc,
   /* для health.js («Питание» и «Тренировки») */
   T:T,addDays:addDays,diff:diff,fromKey:fromKey,fmtLong:fmtLong,fmtDM:fmtDM,dayWord:dayWord,esc:esc,uid:uid,plural:plural,I:I,nowHM:nowHM,
-  toast:toast,err:err,q:q,sb:sb,SUPA_URL:SUPA_URL,SUPA_KEY:SUPA_KEY,render:render,renderSheet:renderSheet,closeSheet:closeSheet,
+  toast:toast,err:err,q:q,sb:sb,SUPA_URL:SUPA_URL,SUPA_KEY:SUPA_KEY,render:render,renderSheet:renderSheet,closeSheet:closeSheet,loadAll:loadAll,
   setMark:setMark,tgt:tgt,sched:sched,cnt:cnt,COLORS:COLORS,WD:WD,askAssistant:askAssistant,
   AS:AS,asSave:asSave,asAddTask:asAddTask,createTask:createTask,patchTask:patchTask,completeTask:completeTask,reopenTask:reopenTask,deleteTask:deleteTask,findTask:findTask,saveSettings:saveSettings};
 Object.defineProperty(window.__app,'ME',{get:function(){return ME;}});
