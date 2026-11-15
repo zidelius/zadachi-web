@@ -1091,8 +1091,8 @@
     rerenderKeep();
   }
 
-  var ETITLE = { meal: 'Питание', workout: 'Тренировки', body: 'Замеры', pantry: 'Холодильник', note: 'Заметки', cabinet: 'Аптечка', intake: 'Приём', lab: 'Анализы' };
-  function wellOwns(t) { return !!(window.WELL && WELL.owns(t)); }   // типы записей раздела «Здоровье»
+  var ETITLE = { meal: 'Питание', workout: 'Тренировки', body: 'Замеры', pantry: 'Холодильник', note: 'Заметки', cabinet: 'Аптечка', intake: 'Приём', lab: 'Анализы', habit:'Привычки', habit_update:'Изменение привычки', habit_mark:'Отметка привычки', support:'Поддержка' };
+  function entryOwner(t) { return window.PLANBOT&&PLANBOT.owns(t)?PLANBOT:window.WELL&&WELL.owns(t)?WELL:null; }
   function asEntries(a, photos) {
     var out = [], used = false;
     var withPh = function () { if (used || !photos || !photos.length) return []; used = true; return photos.slice(); };
@@ -1100,12 +1100,13 @@
     (a.workouts || []).forEach(function (d) { out.push({ t: 'workout', d: d, photos: withPh() }); });
     (a.body_logs || []).forEach(function (d) { out.push({ t: 'body', d: d, photos: withPh() }); });
     if (window.WELL) out = out.concat(WELL.asEntries(a, withPh));
+    if (window.PLANBOT) out = out.concat(PLANBOT.asEntries(a));
     (a.pantry_items || []).forEach(function (d) { out.push({ t: 'pantry', d: d }); });
     (a.new_notes || []).forEach(function (d) { out.push({ t: 'note', d: d }); });
     return out;
   }
   function entryInfo(e) {
-    if (wellOwns(e.t)) return WELL.entryInfo(e);
+    if (entryOwner(e.t)) return entryOwner(e.t).entryInfo(e);
     var d = e.d, when = function () { return (d.planned ? 'запланировано, ' : '') + dayWord(d.day || T()).toLowerCase() + (d.at ? ' ' + d.at : ''); };
     if (e.t === 'meal') {
       var k = KIND[d.kind] || KIND.snack;
@@ -1121,22 +1122,24 @@
     return { title: d.title, meta: [], note: String(d.body || '').slice(0, 140) };
   }
   var BTN = { meal: function (d) { return d.planned ? 'Запланировать' : 'Записать в питание'; }, workout: function (d) { return d.planned ? 'Запланировать' : 'Записать тренировку'; }, body: function () { return 'Записать замер'; }, pantry: function (d) { return d.kind === 'spice' ? 'В приправы' : 'В холодильник'; }, note: function () { return 'Создать заметку'; }, cabinet: function () { return 'В аптечку'; }, intake: function () { return 'Записать приём'; }, lab: function () { return 'Записать анализы'; } };
-  var DONE ={ ok: 'записано', note: 'в заметках', task: 'в задачах' };
+  BTN.habit=function(){return 'Создать привычку';};BTN.habit_update=function(){return 'Применить изменения';};BTN.habit_mark=function(){return 'Подтвердить отметку';};BTN.support=function(){return 'Включить поддержку';};
+  var DONE ={ ok: 'записано', note: 'в заметках', task: 'в задачах', exists:'уже есть' };
+  var AS_ENTRY_ADDING=new WeakSet();
   function asCards(m, mi) {
     var es = m.entries || []; if (!es.length) return '';
     var open = es.filter(function (e) { return !e._done; }).length, h = '';
     es.forEach(function (e, ei) {
       var inf = entryInfo(e), v = mi + ':' + ei;
-      h += '<div class="prop hentry"><div style="flex:1;min-width:0"><span class="hetag">' + ETITLE[e.t] + '</span><b>' + esc(inf.title) + '</b><div class="meta">' + inf.meta.filter(Boolean).map(function (x) { return '<span>' + esc(x) + '</span>'; }).join('') + '</div>' + (inf.note ? '<div class="muted" style="font-size:12.5px;margin-top:4px;line-height:1.4">' + esc(inf.note) + '</div>' : '') + '</div>';
+      h += '<div class="prop hentry">'+(m.plan_title&&window.PLANBOT?PLANBOT.check(mi,'entry',ei,e):'')+'<div style="flex:1;min-width:0"><span class="hetag">' + ETITLE[e.t] + '</span><b>' + esc(inf.title) + '</b><div class="meta">' + inf.meta.filter(Boolean).map(function (x) { return '<span>' + esc(x) + '</span>'; }).join('') + '</div>' + (inf.note ? '<div class="muted" style="font-size:12.5px;margin-top:4px;line-height:1.4">' + esc(inf.note) + '</div>' : '') + '</div>';
       if (e._done) h += '<span class="badge">' + DONE[e._done] + '</span>';
       else {
-        h += '<div class="hebtns"><button class="btn2" data-a="hAsEntry" data-v="' + v + '">' + BTN[e.t](e.d) + '</button>';
-        if (e.t !== 'note') h += '<button class="link" data-a="hAsTo" data-v="' + v + ':note">в заметки</button>';
-        h += '<button class="link" data-a="hAsTo" data-v="' + v + ':task">задачей</button></div>';
+        h += '<div class="hebtns"><button class="btn2" data-a="hAsEntry" data-v="' + v + '"'+(AS_ENTRY_ADDING.has(e)||window.PLANBOT&&PLANBOT.busy(m)?' disabled':'')+'>' + BTN[e.t](e.d) + '</button>';
+        if (e.t !== 'note') h += '<button class="link" data-a="hAsTo" data-v="' + v + ':note"'+(window.PLANBOT&&PLANBOT.busy(m)?' disabled':'')+'>в заметки</button>';
+        h += '<button class="link" data-a="hAsTo" data-v="' + v + ':task"'+(window.PLANBOT&&PLANBOT.busy(m)?' disabled':'')+'>задачей</button></div>';
       }
       h += '</div>';
     });
-    if (open > 1) h += '<button class="btn2" style="margin-top:8px" data-a="hAsAll" data-v="' + mi + '">Записать всё (' + open + ')</button>';
+    if (open > 1 && !(m.plan_title&&window.PLANBOT)) h += '<button class="btn2" style="margin-top:8px" data-a="hAsAll" data-v="' + mi + '">Записать всё (' + open + ')</button>';
     return h;
   }
   function asSummary(m) {
@@ -1198,7 +1201,7 @@
     if (X.D.notes.indexOf(row) < 0) X.D.notes.unshift(row);
   }
   function entryText(e) {
-    if (wellOwns(e.t)) return WELL.entryText(e);
+    if (entryOwner(e.t)) return entryOwner(e.t).entryText(e);
     var inf = entryInfo(e), d = e.d;
     if (e.t === 'note') return { title: d.title, body: d.body || '' };
     var lines = [inf.meta.filter(Boolean).join(' · ')];
@@ -1207,12 +1210,14 @@
     return { title: ETITLE[e.t] + ': ' + inf.title, body: lines.filter(Boolean).join('\n') };
   }
   async function entryAdd(mi, ei, to) {
-    var m = X.AS.msgs[mi], e = m && m.entries && m.entries[ei]; if (!e || e._done) return false;
+    var m = X.AS.msgs[mi], e = m && m.entries && m.entries[ei]; if (!e || e._done || AS_ENTRY_ADDING.has(e)) return false;
+    AS_ENTRY_ADDING.add(e);
     try {
       if (to === 'note') { var t1 = entryText(e); await addNoteFrom(t1.title, t1.body); e._done = 'note'; }
       else if (to === 'task') {
         var t2 = entryText(e), d = e.d || {};
-        await createTask({ title: t2.title.slice(0, 200), details: t2.body, due_date: d.day && (d.planned || e.t === 'meal' || e.t === 'workout') ? d.day : null, due_time: d.at || null });
+        var savedTask=await createTask({ title: t2.title.slice(0, 200), details: t2.body, due_date: d.day && (d.planned || e.t === 'meal' || e.t === 'workout') ? d.day : null, due_time: d.at || null });
+        if(!savedTask)throw new Error('Задачу не удалось сохранить. Предложение осталось доступным.');
         e._done = 'task';
       } else {
         if (e.t === 'meal') await addMealFrom(e.d, e.photos);
@@ -1220,11 +1225,12 @@
         else if (e.t === 'body') await addBodyFrom(e.d, e.photos);
         else if (e.t === 'pantry') await addPantryFrom(e.d);
         else if (e.t === 'note') await addNoteFrom(e.d.title, e.d.body);
-        else if (wellOwns(e.t)) await WELL.addFrom(e);
-        e._done = 'ok';
+        else if (entryOwner(e.t)) await entryOwner(e.t).addFrom(e);
+        else throw new Error('Неизвестный тип записи');
+        e._done = e._existing?'exists':'ok';
       }
       X.asSave(); render(); return true;
-    } catch (x) { err(x); return false; }
+    } catch (x) { err(x); return false; } finally { AS_ENTRY_ADDING.delete(e); render(); }
   }
   Object.assign(actions, {
     hAsPhDel: function (v) {
@@ -1246,6 +1252,7 @@
 
   Object.assign(A, actions);
   window.HEALTH = {
+    addAssistantEntry: entryAdd,
     load: load, foodView: foodView, fitView: fitView, sheet: sheet,
     asAttach: asAttach, asPending: asPending, asPendingPaths: function () { return PEND.slice(); }, asUploading: function () { return PEND_UP > 0; },
     /* для отчёта (report.js) */
