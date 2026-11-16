@@ -1,554 +1,131 @@
-/* Отчёт по питанию и тренировкам за день или за неделю: картинка PNG.
-   Рисуется на холсте из уже загруженных данных раздела (health.js отдаёт их через HEALTH.r).
-   В браузере файл скачивается или отправляется через «Поделиться», в приложении для Android —
-   сохраняется в галерею (Pictures/Задачи) или уходит в системное «Поделиться» (WidgetBridge). */
+/* Хронологический отчёт: дни, затем отдельный итог. PNG-страницы ограничены по высоте;
+   большой отчёт не обрезается. Только личные данные, план без выполнения не является фактом. */
 (function () {
   'use strict';
-  var X = window.__app, HL = window.HEALTH;
-  if (!X || !HL || !HL.r) return;
-  var R = HL.r, T = X.T, addDays = X.addDays, fromKey = X.fromKey, esc = X.esc, plural = X.plural, toast = X.toast,
-    UI = X.UI, A = X.A, renderSheet = X.renderSheet;
-
-  /* ---------- оформление ---------- */
-  var W = 1080, M = 44, P = 40, CW = W - 2 * M - 2 * P;
-  var C = {
-    bg: '#F6F5F1', card: '#FFFFFF', ink: '#141414', muted: '#6E6C66', faint: '#A9A69E', line: '#E7E4DD', soft: '#EEECE6',
-    prot: '#4A6FB0', fat: '#C0663B', carb: '#3F7D5C', warn: '#B4521A', ok: '#2F7A4F', head: '#141414'
-  };
-  var BODY = '"Golos Text", system-ui, -apple-system, "Segoe UI", sans-serif';
-  var DISP = 'Oswald, "Golos Text", system-ui, sans-serif';
-  var EMO = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
-  var KEMO = { breakfast: '🍳', lunch: '🍲', dinner: '🍽️', snack: '🍎' };
-  var FEMO = { strength: '🏋️', run: '🏃', walk: '🚶', swim: '🏊', bike: '🚴', yoga: '🧘', stretch: '🤸', other: '⚡' };
-  var WD = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
-  var MONG = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
-
-  function dm(k) { var d = fromKey(k); return d.getDate() + ' ' + MONG[d.getMonth()]; }
-  function wdLong(k) { return fromKey(k).toLocaleDateString('ru-RU', { weekday: 'long' }); }
-  function wdi(k) { return (fromKey(k).getDay() + 6) % 7; }
-  function monday(k) { return addDays(k, -wdi(k)); }
-  function n0(x) { return String(Math.round(x || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
-  function n1(x) { return String(Math.round((x || 0) * 10) / 10).replace('.', ','); }
-  function hm(t) { return R.hm(t); }
-
-  /* ---------- примитивы рисования ---------- */
-  function canvas(w, h) { var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
-  function font(g, px, weight, fam) { g.font = (weight || 400) + ' ' + px + 'px ' + (fam || BODY); }
-  function rr(g, x, y, w, h, r) {
-    r = Math.min(r, w / 2, h / 2);
-    g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
-    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  var X=window.__app,HL=window.HEALTH;if(!X||!HL||!HL.r)return;
+  var R=HL.r,A=X.A,UI=X.UI,E=X.esc,T=X.T,addDays=X.addDays;
+  var WIDTH=1080,HEIGHT=4096,M=54,BOTTOM=HEIGHT-80,MAX_DAYS=366,MAX_PAGES=120,MAX_ROWS=10000;
+  var C={bg:'#F6F5F1',ink:'#141414',muted:'#64665F',line:'#D3D5CD',soft:'#E8ECE4',p:'#375B8A',f:'#97491F',c:'#326346'};
+  var FONT='"Golos Text", "Segoe UI", sans-serif',DISPLAY='Geologica, "Golos Text", sans-serif';
+  var MACROS=[['kcal','Калории','ккал'],['protein','Белки','г'],['fat','Жиры','г'],['carbs','Углеводы','г']];
+  function finite(v){if(v==null||String(v).trim()==='')return null;var n=Number(String(v).replace(',','.'));return Number.isFinite(n)&&n>=0?n:null;}
+  function number(v){return v==null?'нет данных':new Intl.NumberFormat('ru-RU',{maximumFractionDigits:1}).format(v);}
+  function validDay(d){return typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d)&&!isNaN(Date.parse(d))&&new Date(d).toISOString().slice(0,10)===d;}
+  function shortDay(d){return d.slice(8,10)+'.'+d.slice(5,7);}
+  function longDay(d){return shortDay(d)+'.'+d.slice(0,4);}
+  function dayCount(from,to){return Math.round((Date.parse(to)-Date.parse(from))/86400000)+1;}
+  function validateRange(from,to){if(!validDay(from)||!validDay(to)||to<from)throw new Error('Выбери корректные даты: начало не позже окончания.');if(to>T())throw new Error('Отчёт содержит факты: будущие даты недоступны.');if(dayCount(from,to)>MAX_DAYS)throw new Error('За один отчёт можно выбрать не более '+MAX_DAYS+' календарных дней.');return{from:from,to:to,calendarDays:dayCount(from,to)};}
+  function own(rows,user){return(rows||[]).filter(function(r){return r&&r.owner===user;});}
+  function between(rows,from,to,user){return own(rows,user).filter(function(r){return r.day>=from&&r.day<=to;}).sort(function(a,b){return(a.day+' '+(a.at||'')+' '+(a.id||'')).localeCompare(b.day+' '+(b.at||'')+' '+(b.id||''));});}
+  function stat(rows,key){var known=0,value=0;rows.forEach(function(r){var n=finite(r[key]);if(n!=null){known++;value+=n;}});return{value:known?value:null,known:known,missing:rows.length-known,complete:rows.length>0&&known===rows.length};}
+  function nutrition(rows){var out={records:rows.length};MACROS.forEach(function(m){out[m[0]]=stat(rows,m[0]);});return out;}
+  function aggregate(days,section,key){var rows=days.map(function(d){return d[section][key];}),known=rows.filter(function(s){return s.value!=null;}),sum=known.reduce(function(n,s){return n+s.value;},0);return{total:known.length?sum:null,average:known.length?sum/known.length:null,dataDays:known.length,calendarDays:days.length,partialDays:known.filter(function(s){return !s.complete;}).length,knownRecords:known.reduce(function(n,s){return n+s.known;},0),missingRecords:rows.reduce(function(n,s){return n+s.missing;},0)};}
+  function performed(row,tasks){if(!row.planned)return true;var t=(tasks||[]).find(function(t){return t.id===row.task_id;});return !!(t&&t.done);}
+  function workoutStats(rows){var sets=[];rows.forEach(function(w){(w.exercises||[]).forEach(function(e){(e.sets||[]).forEach(function(s){if(!s.warmup&&finite(s.reps)>0)sets.push(s);});});});var ton=0,known=0;sets.forEach(function(s){var w=finite(s.weight);if(w!=null){known++;ton+=w*finite(s.reps);}});return{records:rows.length,minutes:stat(rows,'minutes'),kcal:stat(rows,'kcal'),workingSets:sets.length,tonnage:{value:known?ton:null,known:known,missing:sets.length-known,complete:sets.length>0&&known===sets.length}};}
+  /* ACTIVITY already resolves user/day/source. Duplicate day entries are never added together. */
+  function stepDays(activity,from,to){var map={};((activity&&activity.days)||[]).forEach(function(r){if(r&&validDay(r.day)&&r.day>=from&&r.day<=to){var n=finite(r.steps);if(n!=null&&Number.isInteger(n)){if(!map[r.day])map[r.day]={value:n,source:r.source||'',conflict:false};else if(map[r.day].value!==n)map[r.day]={value:null,source:'',conflict:true};}}});return map;}
+  function totals(days){var out={calendarDays:days.length,nutrition:{},steps:{total:null,average:null,dataDays:0,calendarDays:days.length},workouts:{count:0,dataDays:0,minutes:null,kcal:null,tonnage:null},bodyRecords:0,intakeRecords:0,labRecords:0,checkinDays:0,anyDataDays:0,excludedPlanned:{meals:0,workouts:0}};
+    MACROS.forEach(function(m){out.nutrition[m[0]]=aggregate(days,'nutrition',m[0]);});
+    ['minutes','kcal','tonnage'].forEach(function(k){out.workouts[k]=aggregate(days,'workoutStats',k);});
+    days.forEach(function(d){out.workouts.count+=d.workouts.length;if(d.workouts.length)out.workouts.dataDays++;out.bodyRecords+=d.body.length;out.intakeRecords+=d.intakes.length;out.labRecords+=d.labs.length;if(d.checkins.length)out.checkinDays++;if(d.hasData)out.anyDataDays++;out.excludedPlanned.meals+=d.excludedPlanned.meals;out.excludedPlanned.workouts+=d.excludedPlanned.workouts;if(d.steps.value!=null){out.steps.total=(out.steps.total||0)+d.steps.value;out.steps.dataDays++;}});
+    out.steps.average=out.steps.dataDays?out.steps.total/out.steps.dataDays:null;out.nutritionDataDays=days.filter(function(d){return d.meals.length;}).length;return out;
   }
-  function fillR(g, x, y, w, h, r, col) { if (w <= 0 || h <= 0) return; rr(g, x, y, w, h, r); g.fillStyle = col; g.fill(); }
-  function ell(g, t, max) {
-    t = String(t || ''); if (!max || g.measureText(t).width <= max) return t;
-    while (t.length > 1 && g.measureText(t + '…').width > max) t = t.slice(0, -1);
-    return t.replace(/\s+$/, '') + '…';
-  }
-  function txt(g, t, x, y, o) {
-    o = o || {}; font(g, o.size || 28, o.weight || 400, o.fam);
-    g.fillStyle = o.color || C.ink; g.textAlign = o.align || 'left'; g.textBaseline = o.base || 'alphabetic';
-    var s = ell(g, t, o.max); g.fillText(s, x, y); return g.measureText(s).width;
-  }
-  function wrap(g, t, max, lines) {
-    var words = String(t || '').split(/\s+/), out = [], cur = '';
-    words.forEach(function (w) {
-      var test = cur ? cur + ' ' + w : w;
-      if (g.measureText(test).width <= max || !cur) cur = test; else { out.push(cur); cur = w; }
-    });
-    if (cur) out.push(cur);
-    if (lines && out.length > lines) { out = out.slice(0, lines); out[lines - 1] = ell(g, out[lines - 1] + ' …', max); }
-    return out;
-  }
-  function emoji(g, e, cx, cy, size, bg) {
-    if (bg) { g.beginPath(); g.arc(cx, cy, size * 0.95, 0, Math.PI * 2); g.fillStyle = bg; g.fill(); }
-    font(g, size, 400, EMO); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = C.ink; g.fillText(e, cx, cy + size * 0.06);
-  }
-  function hline(g, y, w) { g.fillStyle = C.line; g.fillRect(0, y, w, 2); }
-  function cover(g, img, x, y, w, h, r) {
-    var iw = img.width, ih = img.height, k = Math.max(w / iw, h / ih), sw = w / k, sh = h / k;
-    g.save(); rr(g, x, y, w, h, r); g.clip(); g.drawImage(img, (iw - sw) / 2, (ih - sh) / 2, sw, sh, x, y, w, h); g.restore();
-  }
-  /* блок рисуется на своём холсте, потом из него вырезается использованная высота */
-  function block(fn) {
-    var c = canvas(CW, 5200), g = c.getContext('2d'), h = Math.ceil(fn(g)) || 0;
-    return { c: c, h: Math.min(h, 5200) };
-  }
-  function title(g, y, t, emo) {
-    var x = 0;
-    if (emo) { emoji(g, emo, 26, y + 22, 34); x = 62; }
-    txt(g, t.toUpperCase(), x, y + 36, { size: 38, weight: 600, fam: DISP });
-    return y + 70;
-  }
-  function note(g, y, t) {
-    font(g, 26, 400); var ls = wrap(g, t, CW);
-    ls.forEach(function (l, i) { txt(g, l, 0, y + 30 + i * 36, { size: 26, color: C.muted }); });
-    return y + 30 + ls.length * 36;
-  }
-
-  /* ---------- данные ---------- */
-  function mealsIn(from, to) { return R.H.meals.filter(function (m) { return m.day >= from && m.day <= to; }); }
-  function worksIn(from, to) {
-    return R.H.workouts.filter(function (w) { return w.day >= from && w.day <= to && R.isDone(w); })
-      .sort(function (a, b) { return (a.day + (hm(a.at) || '99')) < (b.day + (hm(b.at) || '99')) ? -1 : 1; });
-  }
-  function bodyIn(from, to) { return R.H.body.filter(function (b) { return b.day >= from && b.day <= to; }).sort(function (a, b) { return a.day < b.day ? -1 : 1; }); }
-  function goals() { var s = X.SET || {}; return { kcal: R.num(s.kcalGoal), p: R.num(s.proteinGoal), f: R.num(s.fatGoal), c: R.num(s.carbsGoal) }; }
-  function tonnage(ws) { var v = 0; ws.forEach(function (w) { (w.exercises || []).forEach(function (e) { R.workingSets(e).forEach(function (s) { v += s.reps * (s.weight || 0); }); }); }); return v; }
-  function setsCount(w) { return (w.exercises || []).reduce(function (a, e) { return a + R.workingSets(e).length; }, 0); }
-  function best(ws) {   // лучший расчётный максимум по каждому упражнению
-    var m = {};
-    ws.forEach(function (w) {
-      (w.exercises || []).forEach(function (e) {
-        R.workingSets(e).forEach(function (s) {
-          if (!(s.weight > 0)) return;
-          var k = R.normName(e.name), sc = s.weight * (1 + s.reps / 30);
-          if (!m[k] || sc > m[k].sc) m[k] = { sc: sc, name: e.name, s: s };
-        });
-      });
-    });
-    return m;
-  }
-
-  /* ---------- общие куски ---------- */
-  function header(g, kind, line1, line2) {
-    var h = 300;
-    g.fillStyle = C.head; g.fillRect(0, 0, W, h);
-    var gr = g.createLinearGradient(0, 0, W, h); gr.addColorStop(0, 'rgba(74,111,176,0.35)'); gr.addColorStop(1, 'rgba(192,102,59,0.28)');
-    g.fillStyle = gr; g.fillRect(0, 0, W, h);
-    txt(g, kind, M + 4, 92, { size: 30, weight: 500, color: 'rgba(255,255,255,0.7)', fam: DISP });
-    txt(g, line1, M, 190, { size: 84, weight: 600, color: '#FFFFFF', fam: DISP, max: W - 2 * M });
-    txt(g, line2, M + 4, 250, { size: 32, color: 'rgba(255,255,255,0.78)', max: W - 2 * M });
-    txt(g, 'ЗАДАЧИ', W - M, 92, { size: 28, weight: 500, color: 'rgba(255,255,255,0.55)', fam: DISP, align: 'right' });
-    return h;
-  }
-  function tiles(g, y, items) {
-    var gap = 16, n = items.length, w = (W - 2 * M - gap * (n - 1)) / n, h = 170;
-    items.forEach(function (it, i) {
-      var x = M + i * (w + gap);
-      g.save(); g.shadowColor = 'rgba(20,20,20,0.07)'; g.shadowBlur = 24; g.shadowOffsetY = 6; fillR(g, x, y, w, h, 24, C.card); g.restore();
-      fillR(g, x, y, 8, h, 4, it[3] || C.ink);
-      txt(g, it[0], x + 28, y + 46, { size: 24, color: C.muted, max: w - 40 });
-      txt(g, it[1], x + 28, y + 112, { size: 58, weight: 600, fam: DISP, max: w - 40 });
-      txt(g, it[2], x + 28, y + 148, { size: 22, color: C.muted, max: w - 40 });
-    });
-    return y + h;
-  }
-  function macroRows(g, x, y, w, vals, gl, unit) {
-    var rows = [['Белки', vals.p, gl.p, C.prot], ['Жиры', vals.f, gl.f, C.fat], ['Углеводы', vals.c, gl.c, C.carb]];
-    rows.forEach(function (r) {
-      txt(g, r[0], x, y + 30, { size: 27, weight: 500 });
-      txt(g, n0(r[1]) + (r[2] ? ' / ' + n0(r[2]) : '') + ' г' + (unit || ''), x + w, y + 30, { size: 27, weight: 600, align: 'right' });
-      fillR(g, x, y + 46, w, 16, 8, C.soft);
-      var max = r[2] || Math.max(vals.p, vals.f, vals.c, 1), k = Math.min(1, r[1] / max);
-      fillR(g, x, y + 46, Math.max(k ? 16 : 0, w * k), 16, 8, r[2] && r[1] > r[2] * 1.05 ? C.warn : r[3]);
-      y += 86;
-    });
-    return y;
-  }
-  function splitBar(g, y, p, f, c) {
-    var kp = p * 4, kf = f * 9, kc = c * 4, sum = kp + kf + kc;
-    if (!sum) return y;
-    txt(g, 'Откуда калории', 0, y + 30, { size: 24, color: C.muted });
-    var x = 0, parts = [[kp, C.prot, 'Б'], [kf, C.fat, 'Ж'], [kc, C.carb, 'У']];
-    g.save(); rr(g, 0, y + 48, CW, 28, 14); g.clip();
-    parts.forEach(function (pt) { var w = CW * pt[0] / sum; g.fillStyle = pt[1]; g.fillRect(x, y + 48, w + 1, 28); x += w; });
-    g.restore();
-    var lx = 0;
-    parts.forEach(function (pt) {
-      g.beginPath(); g.arc(lx + 9, y + 108, 9, 0, Math.PI * 2); g.fillStyle = pt[1]; g.fill();
-      lx += 26 + txt(g, pt[2] + ' ' + Math.round(pt[0] / sum * 100) + '%', lx + 26, y + 117, { size: 25, weight: 500 }) + 34;
-    });
-    return y + 136;
-  }
-  function ring(g, cx, cy, r, val, goal) {
-    g.lineCap = 'round'; g.lineWidth = 24;
-    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.strokeStyle = C.soft; g.stroke();
-    var k = goal ? Math.min(1, val / goal) : (val ? 1 : 0);
-    if (k > 0) { g.beginPath(); g.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k); g.strokeStyle = goal && val > goal * 1.05 ? C.warn : C.ink; g.stroke(); }
-    txt(g, n0(val), cx, cy + 12, { size: 58, weight: 600, fam: DISP, align: 'center' });
-    txt(g, goal ? 'из ' + n0(goal) + ' ккал' : 'ккал', cx, cy + 50, { size: 23, color: C.muted, align: 'center' });
-  }
-  /* схема мышц: L — нагрузка по мышцам, target — значение «красного» */
-  function bodyMap(g, x, y, h, L, target) {
-    if (!window.ANATOMY) return y;
-    var k = h / 2200, fw = 1000 * k, gap = 24;
-    ['front', 'back'].forEach(function (side, i) {
-      var ox = x + i * (fw + gap);
-      window.ANATOMY[side].forEach(function (grp) {
-        var key = (grp.m === 'left-soleus' || grp.m === 'right-soleus') ? 'calves' : grp.m;
-        var fill = (key === 'head' || key === 'knees') ? C.soft : R.heat((L[key] || 0) / target);
-        grp.p.forEach(function (pts) {
-          var a = pts.split(' ').map(Number); g.beginPath();
-          for (var j = 0; j < a.length; j += 2) { var px = ox + a[j] * k, py = y + a[j + 1] * k; if (j) g.lineTo(px, py); else g.moveTo(px, py); }
-          g.closePath(); g.fillStyle = fill; g.fill(); g.lineWidth = 2.5; g.strokeStyle = C.card; g.stroke();
-        });
-      });
-      txt(g, i ? 'сзади' : 'спереди', ox + fw / 2, y + h + 30, { size: 22, color: C.muted, align: 'center' });
-    });
-    return { w: 2 * fw + gap, bottom: y + h + 40 };
-  }
-  function muscles(g, x, y, w, L, target, maxN) {
-    var keys = Object.keys(R.MUS).filter(function (k) { return (L[k] || 0) > 0; }).sort(function (a, b) { return L[b] - L[a]; }).slice(0, maxN);
-    keys.forEach(function (k) {
-      var v = L[k] / target;
-      txt(g, R.MUS[k], x, y + 28, { size: 24, weight: 500, max: w - 70 });
-      txt(g, n1(L[k]), x + w, y + 28, { size: 24, weight: 600, align: 'right' });
-      fillR(g, x, y + 40, w, 12, 6, C.soft); fillR(g, x, y + 40, Math.max(12, w * Math.min(1, v)), 12, 6, R.heat(v));
-      y += 68;
-    });
-    return y;
-  }
-  function loadSection(g, y, ws, target, label) {
-    var L = R.loadOf(ws); if (!Object.keys(L).length) return y;
-    y += 14; txt(g, label, 0, y + 30, { size: 26, weight: 600 }); y += 52;
-    var bm = bodyMap(g, 0, y, 430, L, target);
-    var lx = bm.w + 40, ly = muscles(g, lx, y - 6, CW - lx, L, target, 7);
-    y = Math.max(bm.bottom, ly) + 8;
-    // шкала
-    var gr = g.createLinearGradient(0, 0, 260, 0); gr.addColorStop(0, R.heat(0)); gr.addColorStop(0.5, R.heat(0.5)); gr.addColorStop(1, R.heat(1));
-    fillR(g, 0, y + 6, 260, 12, 6, gr);
-    txt(g, 'нет нагрузки → максимум (' + target + ' усл. подходов)', 280, y + 19, { size: 21, color: C.muted, max: CW - 280 });
-    return y + 40;
-  }
-
-  /* ---------- отчёт за день ---------- */
-  async function photosFor(ms) {
-    var out = {};
-    await Promise.all(ms.filter(function (m) { return (m.photos || []).length; }).slice(0, 12).map(async function (m) {
-      try {
-        var b = await Promise.race([R.photoBlob(m.photos[0]), new Promise(function (_, rej) { setTimeout(function () { rej(new Error('t')); }, 8000); })]);
-        out[m.id] = await new Promise(function (res, rej) { var u = URL.createObjectURL(b), im = new Image(); im.onload = function () { res(im); }; im.onerror = rej; im.src = u; });
-      } catch (e) { }
-    }));
-    return out;
-  }
-  function mealList(g, y, ms, ph) {
-    ms.forEach(function (m, i) {
-      var done = R.isDone(m), k = R.KIND[m.kind] || R.KIND.snack, top = y;
-      if (i) hline(g, y, CW);
-      y += 22;
-      g.globalAlpha = done ? 1 : 0.5;
-      if (ph[m.id]) cover(g, ph[m.id], 0, y, 104, 104, 20);
-      else { fillR(g, 0, y, 104, 104, 20, C.soft); emoji(g, KEMO[m.kind] || '🍴', 52, y + 52, 46); }
-      var tx = 132, tw = CW - tx - 190;
-      font(g, 30, 600); var ls = wrap(g, m.title || k.name, tw, 2);
-      ls.forEach(function (l, j) { txt(g, l, tx, y + 34 + j * 38, { size: 30, weight: 600 }); });
-      var sub = k.name + (hm(m.at) ? ' · ' + hm(m.at) : '') + (m.planned && !done ? ' · план, не отмечено' : '');
-      txt(g, sub, tx, y + 34 + ls.length * 38 + 2, { size: 24, color: C.muted, max: tw });
-      if (m.kcal != null) {
-        txt(g, n0(m.kcal), CW, y + 44, { size: 46, weight: 600, fam: DISP, align: 'right' });
-        txt(g, 'ккал', CW, y + 74, { size: 22, color: C.muted, align: 'right' });
-      }
-      if (m.protein != null || m.fat != null || m.carbs != null) {
-        var bx = CW, parts = [['У ' + n0(m.carbs), C.carb], ['Ж ' + n0(m.fat), C.fat], ['Б ' + n0(m.protein), C.prot]];
-        parts.forEach(function (pt) { var w = txt(g, pt[0], bx, y + 108, { size: 23, weight: 600, color: pt[1], align: 'right' }); bx -= w + 16; });
-      }
-      g.globalAlpha = 1;
-      y = Math.max(y + 104, y + 34 + ls.length * 38 + 14, y + 112) + 22;
-    });
-    return y;
-  }
-  function workList(g, y, ws, showDay) {
-    ws.forEach(function (w, i) {
-      var k = R.FKIND[w.kind] || R.FKIND.other;
-      if (i) hline(g, y, CW);
-      y += 24;
-      fillR(g, 0, y, 92, 92, 46, C.soft); emoji(g, FEMO[w.kind] || '⚡', 46, y + 46, 42);
-      var tx = 120, tw = CW - tx;
-      txt(g, w.title || k.name, tx, y + 36, { size: 31, weight: 600, max: tw });
-      var bits = [];
-      if (showDay) bits.push(WD[wdi(w.day)] + ', ' + dm(w.day)); else if (hm(w.at)) bits.push(hm(w.at));
-      bits.push(k.name);
-      if (w.minutes != null) bits.push(Math.round(w.minutes) + ' мин');
-      if (w.kcal != null) bits.push(n0(w.kcal) + ' ккал');
-      var ns = setsCount(w); if (ns) bits.push((w.exercises || []).length + ' упр., ' + ns + ' ' + plural(ns, 'подход', 'подхода', 'подходов'));
-      var t = tonnage([w]); if (t) bits.push(n1(t / 1000) + ' т');
-      txt(g, bits.join(' · '), tx, y + 74, { size: 24, color: C.muted, max: tw });
-      y += 100;
-      var mets = (w.metrics || []).slice(0, 6);
-      if (mets.length) {
-        var cx = tx; font(g, 23, 500);
-        mets.forEach(function (m) {
-          var s = m.name + ' ' + m.value + (m.unit ? ' ' + m.unit : ''), mw = Math.min(tw, g.measureText(s).width + 32);
-          if (cx + mw > CW) { cx = tx; y += 50; }
-          fillR(g, cx, y, mw, 40, 20, C.soft); txt(g, s, cx + 16, y + 28, { size: 23, weight: 500, max: mw - 32 }); cx += mw + 10;
-        });
-        y += 56;
-      }
-      if (!showDay) (w.exercises || []).forEach(function (e) {
-        var ws2 = R.workingSets(e); if (!ws2.length) return;
-        txt(g, e.name, tx, y + 28, { size: 26, weight: 500, max: tw * 0.48 });
-        font(g, 24, 400); var ls = wrap(g, R.summarizeSets(ws2), tw * 0.5, 3);
-        ls.forEach(function (l, j) { txt(g, l, CW, y + 28 + j * 32, { size: 24, color: C.muted, align: 'right' }); });
-        y += Math.max(1, ls.length) * 32 + 12;
-      });
-      if (w.note && !showDay) { font(g, 24, 400); wrap(g, w.note, tw, 3).forEach(function (l) { txt(g, l, tx, y + 28, { size: 24, color: C.muted }); y += 32; }); y += 6; }
-      y += 10;
-    });
-    return y;
-  }
-  function bodyCard(list, single) {
-    if (!list.length) return null;
-    return block(function (g) {
-      var y = title(g, 0, 'Замеры', '⚖️');
-      var a = list[0], b = list[list.length - 1], cells = [];
-      if (b.weight != null) cells.push(['Вес', n1(b.weight) + ' кг', !single && a.weight != null && a !== b ? (b.weight - a.weight > 0 ? '+' : '') + n1(b.weight - a.weight) + ' кг за неделю' : '']);
-      if (b.fat != null) cells.push(['Жир', n1(b.fat) + ' %', '']);
-      if (b.muscle != null) cells.push(['Мышцы', n1(b.muscle) + ' кг', '']);
-      if (b.waist != null) cells.push(['Талия', n1(b.waist) + ' см', '']);
-      if (!cells.length) return note(g, y, 'Замер без цифр.') + 10;
-      var w = (CW - 16 * (cells.length - 1)) / cells.length;
-      cells.forEach(function (c, i) {
-        var x = i * (w + 16); fillR(g, x, y, w, 140, 20, C.soft);
-        txt(g, c[0], x + 22, y + 40, { size: 23, color: C.muted });
-        txt(g, c[1], x + 22, y + 94, { size: 44, weight: 600, fam: DISP, max: w - 40 });
-        if (c[2]) txt(g, c[2], x + 22, y + 126, { size: 20, color: C.muted, max: w - 40 });
-      });
-      return y + 150;
-    });
-  }
-  async function dayReport(d) {
-    var ms = R.mealsOf(d), ws = worksIn(d, d), gl = goals(), t = R.totals(d), ph = await photosFor(ms);
-    var burned = ws.reduce(function (a, w) { return a + (+w.kcal || 0); }, 0), mins = ws.reduce(function (a, w) { return a + (+w.minutes || 0); }, 0);
-    var cards = [];
-    cards.push(block(function (g) {
-      var y = title(g, 0, 'Питание', '🥗');
-      if (!ms.length) return note(g, y, 'В этот день записей о еде нет.') + 10;
-      ring(g, 120, y + 125, 104, t.kcal, gl.kcal);
-      var my = macroRows(g, 290, y + 2, CW - 290, { p: t.protein, f: t.fat, c: t.carbs }, gl);
-      y = Math.max(y + 260, my) + 10;
-      y = splitBar(g, y, t.protein, t.fat, t.carbs);
-      if (t.plan) y = note(g, y - 12, 'Запланировано, но не отмечено: ещё ' + n0(t.plan) + ' ккал.') + 6;
-      y += 10;
-      return mealList(g, y, ms, ph);
-    }));
-    cards.push(block(function (g) {
-      var y = title(g, 0, 'Тренировки', '💪');
-      if (!ws.length) return note(g, y, 'В этот день тренировок не было.') + 10;
-      y = workList(g, y - 10, ws, false);
-      return loadSection(g, y, ws.filter(function (w) { return (w.exercises || []).length; }), R.TARGET.workout, 'Нагрузка на мышцы');
-    }));
-    var bc = bodyCard(bodyIn(d, d), true); if (bc) cards.push(bc);
-    var dd = fromKey(d);
-    return compose('ОТЧЁТ ЗА ДЕНЬ', dm(d), wdLong(d).replace(/^./, function (c) { return c.toUpperCase(); }) + ', ' + dd.getFullYear(), [[
-      ['Съедено', n0(t.kcal), gl.kcal ? 'из ' + n0(gl.kcal) + ' ккал' : 'ккал', C.ink],
-      ['Белки', n0(t.protein), gl.p ? 'из ' + n0(gl.p) + ' г' : 'грамм', C.prot],
-      ['Жиры', n0(t.fat), gl.f ? 'из ' + n0(gl.f) + ' г' : 'грамм', C.fat],
-      ['Углеводы', n0(t.carbs), gl.c ? 'из ' + n0(gl.c) + ' г' : 'грамм', C.carb]
-    ], [
-      ['Тренировки', String(ws.length), mins ? Math.round(mins) + ' мин' : plural(ws.length, 'тренировка', 'тренировки', 'тренировок'), C.carb],
-      ['Сожжено', n0(burned), 'ккал на тренировках', C.fat]
-    ]], cards);
-  }
-
-  /* ---------- отчёт за неделю ---------- */
-  function weekBars(g, y, days, gl) {
-    var h = 300, top = y + 50, bw = CW / 7, vals = days.map(function (x) { return x.t.kcal; });
-    var mx = Math.max.apply(null, vals.concat([gl.kcal ? gl.kcal * 1.15 : 0, 1]));
-    for (var i = 0; i <= 2; i++) { var gy = top + h - h * i / 2; g.fillStyle = C.line; g.fillRect(0, gy, CW, 2); }
-    days.forEach(function (x, i) {
-      var v = x.t.kcal, bh = v ? Math.max(8, h * v / mx) : 0, bx = i * bw + bw * 0.18, w = bw * 0.64;
-      if (v) {
-        fillR(g, bx, top + h - bh, w, bh, 14, gl.kcal && v > gl.kcal * 1.1 ? C.warn : C.ink);
-        txt(g, n0(v), bx + w / 2, top + h - bh - 14, { size: 24, weight: 600, align: 'center' });
-      } else txt(g, '—', bx + w / 2, top + h - 14, { size: 26, color: C.faint, align: 'center' });
-      txt(g, WD[i], bx + w / 2, top + h + 38, { size: 25, weight: 600, align: 'center' });
-      txt(g, String(fromKey(x.d).getDate()), bx + w / 2, top + h + 70, { size: 22, color: C.muted, align: 'center' });
-    });
-    if (gl.kcal) {
-      var ly = top + h - h * gl.kcal / mx; g.save(); g.setLineDash([12, 10]); g.strokeStyle = C.carb; g.lineWidth = 3;
-      g.beginPath(); g.moveTo(0, ly); g.lineTo(CW, ly); g.stroke(); g.restore();
-      txt(g, 'цель ' + n0(gl.kcal), CW, ly - 10, { size: 21, weight: 600, color: C.carb, align: 'right' });
+  function makeData(from,to,input,user){if(user===undefined)user=X.ME;var range=validateRange(from,to),src=input||{},rows={},steps=stepDays(src.activity,from,to),days=[];
+    ['meals','workouts','body','intakes','labs','checkins'].forEach(function(k){rows[k]=between(src[k],from,to,user);});var tasks=own(src.tasks,user),cabinet=own(src.cabinet,user);
+    for(var i=0;i<range.calendarDays;i++){var day=addDays(from,i),d={day:day};Object.keys(rows).forEach(function(k){d[k]=rows[k].filter(function(r){return r.day===day;});});
+      var allMeals=d.meals,allWorks=d.workouts;d.meals=allMeals.filter(function(m){return performed(m,tasks);});d.workouts=allWorks.filter(function(w){return performed(w,tasks);});d.intakes=d.intakes.map(function(r){var item=cabinet.find(function(c){return c.id===r.item_id;});return Object.assign({},r,{report_unit:r.unit||item&&item.unit||'ед.',report_name:r.name||item&&item.name||'Приём'});});
+      d.excludedPlanned={meals:allMeals.length-d.meals.length,workouts:allWorks.length-d.workouts.length};d.nutrition=nutrition(d.meals);d.workoutStats=workoutStats(d.workouts);d.steps=steps[day]||{value:null,source:'',conflict:false};d.hasData=!!(d.meals.length||d.workouts.length||d.body.length||d.intakes.length||d.labs.length||d.checkins.length||d.steps.value!=null);days.push(d);
     }
-    return top + h + 92;
+    return{from:from,to:to,owner:user,days:days,totals:totals(days),coverage:src.coverage||{mode:'loaded',warnings:['Загруженные личные записи; полнота архива не подтверждена.']}};
   }
-  function weekTable(g, y, days) {
-    var cols = [[0, 'День', 'left'], [CW * 0.42, 'ккал', 'right'], [CW * 0.58, 'Б', 'right'], [CW * 0.72, 'Ж', 'right'], [CW * 0.86, 'У', 'right'], [CW, 'приёмов', 'right']];
-    cols.forEach(function (c) { txt(g, c[1], c[0], y + 28, { size: 22, color: C.muted, align: c[2] }); });
-    y += 44;
-    days.forEach(function (x, i) {
-      if (i % 2 === 0) fillR(g, -12, y, CW + 24, 52, 12, '#F7F6F2');
-      var has = x.t.n > 0, col = has ? C.ink : C.faint;
-      txt(g, WD[i] + ', ' + dm(x.d), 8, y + 35, { size: 25, weight: 500, color: col });
-      txt(g, has ? n0(x.t.kcal) : '—', cols[1][0], y + 35, { size: 25, weight: 600, color: col, align: 'right' });
-      txt(g, has ? n0(x.t.protein) : '—', cols[2][0], y + 35, { size: 25, color: has ? C.prot : col, align: 'right' });
-      txt(g, has ? n0(x.t.fat) : '—', cols[3][0], y + 35, { size: 25, color: has ? C.fat : col, align: 'right' });
-      txt(g, has ? n0(x.t.carbs) : '—', cols[4][0], y + 35, { size: 25, color: has ? C.carb : col, align: 'right' });
-      txt(g, has ? String(x.t.n) : '—', CW - 8, y + 35, { size: 25, color: col, align: 'right' });
-      y += 52;
-    });
-    return y + 10;
+  function snapshot(){var well=window.WELL&&WELL.exportData?WELL.exportData():{},growth=window.GROWTH&&GROWTH.data?GROWTH.data():{};return{meals:R.H.meals||[],workouts:R.H.workouts||[],body:R.H.body||[],cabinet:well.cabinet||[],intakes:well.intakes||[],labs:well.labs||[],checkins:growth.checkins||[],tasks:X.D.tasks||[],coverage:{mode:'loaded',warnings:[]}};}
+  function sameUser(user){if(!user||X.ME!==user)throw new Error('Аккаунт изменился. Сформируй отчёт заново.');}
+  async function timed(p){var timer;try{return await Promise.race([p,new Promise(function(_,reject){timer=setTimeout(function(){reject(new Error('Источник не ответил за 15 секунд.'));},15000);})]);}finally{clearTimeout(timer);}}
+  async function readRows(table,from,to,user){var all=[];for(var page=0;page<MAX_ROWS/500;page++){sameUser(user);var rows=await timed(X.q(X.sb.from(table).select('*').eq('owner',user).gte('day',from).lte('day',to).order('day').order('id').range(page*500,page*500+499)));sameUser(user);all=all.concat(own(rows,user));if(rows.length<500)return all;}
+    var e=new Error('Слишком много записей в '+table+'. Сократи период отчёта; данные не обрезаны.');e.reportLimit=true;throw e;
   }
-  function weekStrip(g, y, from, ws) {
-    var bw = CW / 7;
-    for (var i = 0; i < 7; i++) {
-      var d = addDays(from, i), dw = ws.filter(function (w) { return w.day === d; }), cx = i * bw + bw / 2;
-      g.beginPath(); g.arc(cx, y + 50, 44, 0, Math.PI * 2); g.fillStyle = dw.length ? C.ink : C.soft; g.fill();
-      if (dw.length) { emoji(g, FEMO[dw[0].kind] || '⚡', cx, y + 50, 38); if (dw.length > 1) { g.beginPath(); g.arc(cx + 34, y + 18, 17, 0, Math.PI * 2); g.fillStyle = C.fat; g.fill(); txt(g, String(dw.length), cx + 34, y + 26, { size: 21, weight: 700, color: '#fff', align: 'center' }); } }
-      txt(g, WD[i], cx, y + 128, { size: 24, weight: 600, align: 'center', color: dw.length ? C.ink : C.muted });
-    }
-    return y + 150;
-  }
-  function records(g, y, from, to) {
-    var before = best(R.H.workouts.filter(function (w) { return R.isDone(w) && w.day < from; }));
-    var now = best(worksIn(from, to)), rows = [];
-    Object.keys(now).forEach(function (k) {
-      var b = before[k], n = now[k];
-      if (!b) rows.push([n.name, n.s.reps + ' × ' + n1(n.s.weight) + ' кг', 'впервые']);
-      else if (n.sc > b.sc * 1.001) rows.push([n.name, n.s.reps + ' × ' + n1(n.s.weight) + ' кг', '▲ +' + Math.round((n.sc - b.sc) / b.sc * 100) + '%']);
-    });
-    if (!rows.length) return y;
-    y += 10; txt(g, 'Рекорды и новые упражнения', 0, y + 30, { size: 26, weight: 600 }); y += 50;
-    rows.slice(0, 8).forEach(function (r) {
-      txt(g, r[0], 0, y + 30, { size: 25, weight: 500, max: CW * 0.5 });
-      txt(g, r[1], CW * 0.74, y + 30, { size: 25, color: C.muted, align: 'right' });
-      txt(g, r[2], CW, y + 30, { size: 25, weight: 600, color: r[2] === 'впервые' ? C.muted : C.ok, align: 'right' });
-      y += 44;
-    });
-    return y + 8;
-  }
-  async function weekReport(d) {
-    var from = monday(d), to = addDays(from, 6), gl = goals(), days = [];
-    for (var i = 0; i < 7; i++) { var k = addDays(from, i); days.push({ d: k, t: R.totals(k) }); }
-    var fed = days.filter(function (x) { return x.t.n > 0; }), nf = fed.length || 1;
-    var avg = { kcal: 0, p: 0, f: 0, c: 0 };
-    fed.forEach(function (x) { avg.kcal += x.t.kcal / nf; avg.p += x.t.protein / nf; avg.f += x.t.fat / nf; avg.c += x.t.carbs / nf; });
-    var ws = worksIn(from, to), mins = ws.reduce(function (a, w) { return a + (+w.minutes || 0); }, 0), ton = tonnage(ws), burned = ws.reduce(function (a, w) { return a + (+w.kcal || 0); }, 0);
-    var cards = [];
-    cards.push(block(function (g) {
-      var y = title(g, 0, 'Питание', '🥗');
-      if (!fed.length) return note(g, y, 'На этой неделе записей о еде нет.') + 10;
-      y = weekBars(g, y - 30, days, gl);
-      txt(g, 'В среднем за день', 0, y + 30, { size: 26, weight: 600 });
-      txt(g, 'по ' + fed.length + ' ' + plural(fed.length, 'дню', 'дням', 'дням') + ' с записями', CW, y + 30, { size: 23, color: C.muted, align: 'right' });
-      y += 50;
-      ring(g, 120, y + 125, 104, avg.kcal, gl.kcal);
-      var my = macroRows(g, 290, y + 2, CW - 290, avg, gl);
-      y = Math.max(y + 260, my) + 10;
-      y = splitBar(g, y, avg.p, avg.f, avg.c);
-      if (gl.kcal) {
-        var inG = fed.filter(function (x) { return Math.abs(x.t.kcal - gl.kcal) <= gl.kcal * 0.1; }).length;
-        y = note(g, y - 12, 'В пределах цели (±10%): ' + inG + ' из ' + fed.length + ' ' + plural(fed.length, 'дня', 'дней', 'дней') + '.') + 14;
-      }
-      return weekTable(g, y + 6, days);
-    }));
-    cards.push(block(function (g) {
-      var y = title(g, 0, 'Тренировки', '💪');
-      if (!ws.length) return note(g, y, 'На этой неделе тренировок не было.') + 10;
-      y = weekStrip(g, y, from, ws);
-      y = workList(g, y - 10, ws, true);
-      y = records(g, y, from, to);
-      return loadSection(g, y, ws.filter(function (w) { return (w.exercises || []).length; }), R.TARGET.week, 'Нагрузка на мышцы за неделю');
-    }));
-    var bc = bodyCard(bodyIn(from, to), false); if (bc) cards.push(bc);
-    var fd = fromKey(from), td = fromKey(to);
-    var range = fd.getMonth() === td.getMonth() ? fd.getDate() + '–' + dm(to) : dm(from) + ' – ' + dm(to);
-    return compose('ОТЧЁТ ЗА НЕДЕЛЮ', range, 'Понедельник – воскресенье, ' + td.getFullYear(), [[
-      ['Калории', n0(avg.kcal), gl.kcal ? 'в день, цель ' + n0(gl.kcal) : 'ккал в день', C.ink],
-      ['Белки', n0(avg.p), gl.p ? 'г в день, цель ' + n0(gl.p) : 'г в день', C.prot],
-      ['Жиры', n0(avg.f), gl.f ? 'г в день, цель ' + n0(gl.f) : 'г в день', C.fat],
-      ['Углеводы', n0(avg.c), gl.c ? 'г в день, цель ' + n0(gl.c) : 'г в день', C.carb]
-    ], [
-      ['Тренировки', String(ws.length), mins ? Math.round(mins) + ' мин' : plural(ws.length, 'тренировка', 'тренировки', 'тренировок'), C.carb],
-      ton ? ['Поднято', n1(ton / 1000), 'тонн за неделю', C.fat] : ['Сожжено', n0(burned), 'ккал на тренировках', C.fat]
-    ]], cards);
+  async function collect(from,to){validateRange(from,to);var user=X.ME; sameUser(user);var src=snapshot(),tables=[['meals','meals'],['workouts','workouts'],['body_log','body'],['intakes','intakes'],['labs','labs'],['daily_checkins','checkins']];
+    if(X.sb&&X.q){await Promise.all(tables.map(async function(p){try{src[p[1]]=await readRows(p[0],from,to,user);}catch(e){sameUser(user);if(e.reportLimit)throw e;src.coverage.warnings.push('Источник '+p[0]+': использован загруженный срез; полнота периода не подтверждена.');}}));src.coverage.mode=src.coverage.warnings.length?'mixed':'fresh';}
+    else src.coverage.warnings.push('Использованы загруженные записи; это не полный архив.');
+    var ids=Array.from(new Set(src.meals.concat(src.workouts).filter(function(r){return r.planned&&r.task_id;}).map(function(r){return r.task_id;})));
+    if(ids.length&&X.sb&&X.q){try{var tasks=[];for(var i=0;i<ids.length;i+=100){var got=await timed(X.q(X.sb.from('tasks').select('id,owner,done').eq('owner',user).in('id',ids.slice(i,i+100))));sameUser(user);tasks=tasks.concat(own(got,user));}src.tasks=tasks;}catch(e){sameUser(user);src.coverage.warnings.push('Статус выполнения планов взят из загруженных задач.');}}
+    src.activity={days:[]};if(window.ACTIVITY&&ACTIVITY.reportData){try{src.activity=await timed(ACTIVITY.reportData(from,to));src.coverage.activity=src.activity.coverage||{};sameUser(user);if(src.activity.supported===false)src.coverage.warnings.push('Источник шагов недоступен.');}catch(e){sameUser(user);src.coverage.warnings.push('Шаги не удалось получить; отсутствующие значения не считаются нулём.');}}
+    else src.coverage.warnings.push('Шаги: источник ещё не подключён или нет данных.');
+    if(src.coverage.mode==='fresh'&&src.coverage.warnings.length)src.coverage.mode='mixed';sameUser(user);return makeData(from,to,src,user);
   }
 
-  /* ---------- сборка картинки ---------- */
-  function compose(kind, l1, l2, tl, cards) {
-    var rows = Array.isArray(tl[0]) ? tl : [tl];
-    var H0 = 300 + 40 + rows.length * 170 + (rows.length - 1) * 16 + 36, total = H0 + cards.reduce(function (a, b) { return a + b.h + 2 * P + 28; }, 0) + 90;
-    var c = canvas(W, total), g = c.getContext('2d');
-    g.fillStyle = C.bg; g.fillRect(0, 0, W, total);
-    header(g, kind, l1, l2);
-    var y = 300 + 40;
-    rows.forEach(function (r, i) { y = tiles(g, y, r) + (i < rows.length - 1 ? 16 : 36); });
-    cards.forEach(function (b) {
-      g.save(); g.shadowColor = 'rgba(20,20,20,0.07)'; g.shadowBlur = 30; g.shadowOffsetY = 8; fillR(g, M, y, W - 2 * M, b.h + 2 * P, 32, C.card); g.restore();
-      g.drawImage(b.c, 0, 0, CW, b.h, M + P, y + P, CW, b.h);
-      y += b.h + 2 * P + 28;
+  /* Layout stores drawing commands, not one unbounded bitmap. No text/record is silently cut. */
+  function font(g,size,weight){g.font=(weight||400)+' '+size+'px '+(weight>=600?DISPLAY:FONT);}
+  function wrap(g,text,width,size,weight){font(g,size,weight);var out=[],line='';String(text==null?'':text).split(/\r?\n/).forEach(function(par){if(!par){out.push('');return;}par.split(/\s+/).forEach(function(word){var pieces=[];while(g.measureText(word).width>width&&word.length>1){var n=Math.max(1,Math.floor(word.length*width/g.measureText(word).width));while(n>1&&g.measureText(word.slice(0,n)).width>width)n--;pieces.push(word.slice(0,n));word=word.slice(n);}pieces.push(word);pieces.forEach(function(piece,j){var next=line?line+' '+piece:piece;if(g.measureText(next).width>width&&line){out.push(line);line=piece;}else line=next;if(j<pieces.length-1){out.push(line);line='';}});});if(line){out.push(line);line='';}});return out.length?out:[''];}
+  function layout(data,measure){var pages=[],page,y,currentDay='';
+    function newPage(){if(pages.length>=MAX_PAGES)throw new Error('Отчёт превышает '+MAX_PAGES+' PNG-страниц. Сократи период; обрезки нет.');page={commands:[],height:HEIGHT};pages.push(page);y=176;if(currentDay)raw('text',34,{text:shortDay(currentDay)+' · продолжение дня',size:26,weight:600,color:C.muted});}
+    function raw(type,h,o){o=Object.assign({type:type,y:y,h:h},o||{});page.commands.push(o);y+=h;}
+    function ensure(h){if(y+h>BOTTOM)newPage();}
+    function text(t,size,weight,color,indent){size=size||25;var x=M+(indent||0),width=WIDTH-M-x;wrap(measure,t,width,size,weight||400).forEach(function(line){var h=Math.ceil(size*1.42);ensure(h);raw('text',h,{text:line,size:size,weight:weight||400,color:color||C.ink,x:x});});}
+    function gap(h){ensure(h);y+=h;}
+    function section(t){ensure(100);gap(14);text(t,29,600);}
+    function line(){ensure(30);raw('line',30);}
+    function label(m,s){return m[1]+': '+(s.value==null?'нет данных':number(s.value)+' '+m[2]+(s.missing?' · часть значений неизвестна':''));}
+    newPage();text('Дни по порядку',38,600);text('Фактические записи. Нет записи ≠ ноль. Фото и файлы не включены.',22,400,C.muted);data.coverage.warnings.forEach(function(w){text(w,21,400,C.muted);});
+    data.days.forEach(function(d){currentDay='';ensure(150);line();currentDay=d.day;text(shortDay(d.day)+' · '+new Date(d.day+'T12:00:00').toLocaleDateString('ru-RU',{weekday:'long',year:'numeric'}),36,600);text('Шаги: '+(d.steps.value==null?'нет данных':number(d.steps.value))+(d.steps.source?' · '+d.steps.source:'')+(d.steps.conflict?' · конфликт источника, итог не рассчитан':''),28,600);
+      section('Питание · '+d.meals.length+' записей');MACROS.forEach(function(m){text(label(m,d.nutrition[m[0]]),25,400,m[0]==='protein'?C.p:m[0]==='fat'?C.f:m[0]==='carbs'?C.c:C.ink);});
+      d.meals.forEach(function(m){gap(10);var kind=R.KIND&&R.KIND[m.kind];text((m.at?String(m.at).slice(0,5)+' · ':'')+(kind?kind.name+' · ':'')+(m.title||'Питание'),27,600);text((finite(m.grams)!=null?number(finite(m.grams))+' г · ':'')+MACROS.map(function(k){return k[1]+': '+(finite(m[k[0]])==null?'?':number(finite(m[k[0]])))+' '+k[2];}).join(' · '),23,400,C.muted);if(m.note)text(m.note,23,400,C.muted);});
+      if(d.excludedPlanned.meals)text('Не включено в факты: '+d.excludedPlanned.meals+' запланированных, но не выполненных приёмов пищи.',22,400,C.muted);
+      section('Тренировки · '+d.workouts.length+' записей');if(!d.workouts.length)text('Нет записанных выполненных тренировок. Это не утверждение об отсутствии активности.',23,400,C.muted);
+      d.workouts.forEach(function(w){gap(8);text((w.at?String(w.at).slice(0,5)+' · ':'')+(w.title||R.FKIND&&R.FKIND[w.kind]&&R.FKIND[w.kind].name||'Тренировка'),27,600);text('Длительность: '+(finite(w.minutes)==null?'нет данных':number(finite(w.minutes))+' мин')+' · расход: '+(finite(w.kcal)==null?'нет данных':number(finite(w.kcal))+' ккал'),23,400,C.muted);(w.metrics||[]).forEach(function(m){text(m.name+': '+(m.value==null?'нет данных':m.value)+(m.unit?' '+m.unit:''),23);});(w.exercises||[]).forEach(function(ex){text(ex.name||'Упражнение',24,600,undefined,16);(ex.sets||[]).forEach(function(s,i){text((s.warmup?'Разминка ':'Подход ')+(i+1)+': '+(finite(s.reps)==null?'?':number(finite(s.reps)))+' повторов · '+(finite(s.weight)==null?'вес неизвестен':number(finite(s.weight))+' кг'),22,400,C.muted,28);});});if(w.note)text(w.note,23,400,C.muted);});
+      if(d.excludedPlanned.workouts)text('Не включено в факты: '+d.excludedPlanned.workouts+' запланированных, но не выполненных тренировок.',22,400,C.muted);
+      if(d.body.length){section('Измерения');d.body.forEach(function(b){var cells=[['weight','Вес','кг'],['fat','Жир','%'],['muscle','Мышцы','кг'],['waist','Талия','см']].filter(function(k){return finite(b[k[0]])!=null;}).map(function(k){return k[1]+': '+number(finite(b[k[0]]))+' '+k[2];});text(cells.join(' · ')||'Замер без чисел',25);if(b.note)text(b.note,23,400,C.muted);});}
+      if(d.intakes.length){section('Записанные приёмы');d.intakes.forEach(function(r){text((r.at?String(r.at).slice(0,5)+' · ':'')+r.report_name+(r.units!=null?' · '+number(finite(r.units))+' '+r.report_unit:''),25);if(r.note)text(r.note,23,400,C.muted);});}
+      if(d.labs.length){section('Анализы · записанные показатели');d.labs.forEach(function(l){text(l.title||'Анализы',25,600);if(l.lab)text(l.lab,23,400,C.muted);(l.items||[]).forEach(function(it){text(it.name+': '+(it.value!=null?it.value:it.text||'нет данных')+(it.unit?' '+it.unit:'')+((it.low!=null||it.high!=null)?' · референс бланка '+(it.low==null?'?':it.low)+'–'+(it.high==null?'?':it.high):''),23);});if(l.note)text(l.note,23,400,C.muted);});}
+      if(d.checkins.length){section('Самочувствие · личные наблюдения');d.checkins.forEach(function(c){text('Сон: '+(finite(c.sleep_hours)==null?'нет данных':number(finite(c.sleep_hours))+' ч')+' · энергия: '+(c.energy==null?'нет данных':c.energy+'/5')+' · напряжение: '+(c.stress==null?'нет данных':c.stress+'/5'),24);[['win','Поддержало'],['obstacle','Помешало'],['next_step','Следующий шаг']].forEach(function(k){if(c[k[0]])text(k[1]+': '+c[k[0]],23,400,C.muted);});});}
+      if(!d.body.length&&!d.intakes.length&&!d.labs.length&&!d.checkins.length)text('Здоровье и самочувствие: нет доступных записей за день.',22,400,C.muted);gap(12);
     });
-    var now = new Date();
-    txt(g, 'Сформировано ' + now.getDate() + ' ' + MONG[now.getMonth()] + ' ' + now.getFullYear() + ', ' + String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0') + ' · приложение «Задачи»', W / 2, y + 40, { size: 22, color: C.faint, align: 'center' });
-    return c;
+    currentDay='';newPage();text('Общий итог периода',40,600);text(longDay(data.from)+' — '+longDay(data.to),28,600);var t=data.totals;
+    text('Календарных дней: '+t.calendarDays+' · дней с любыми данными: '+t.anyDataDays,25);text('С питанием: '+t.nutritionDataDays+' · с тренировками: '+t.workouts.dataDays+' · с шагами: '+t.steps.dataDays,24,400,C.muted);
+    section('БЖУ и калории · известные суммы');MACROS.forEach(function(m){var s=t.nutrition[m[0]];text(m[1]+': '+number(s.total)+(s.total==null?'':' '+m[2])+' · среднее '+number(s.average)+(s.average==null?'':' '+m[2]+'/день с данными'),27,600,m[0]==='protein'?C.p:m[0]==='fat'?C.f:m[0]==='carbs'?C.c:C.ink);text('Дней со значением: '+s.dataDays+' из '+s.calendarDays+(s.partialDays?' · неполных дней: '+s.partialDays:'')+(s.missingRecords?' · неизвестных значений в записях: '+s.missingRecords:''),22,400,C.muted);});
+    section('Шаги');text('Всего: '+number(t.steps.total)+' · среднее: '+number(t.steps.average)+' за день с данными',29,600);text('Дней с измеренным итогом: '+t.steps.dataDays+' из '+t.calendarDays+'. Пропуски не включены в знаменатель; записанный ноль включён.',23,400,C.muted);
+    section('Тренировки и записанная нагрузка');text('Выполненных записей: '+t.workouts.count+' · дней: '+t.workouts.dataDays,27,600);[['minutes','Длительность','мин'],['kcal','Расход по записям','ккал'],['tonnage','Объём с известным весом','кг × повторы']].forEach(function(k){var s=t.workouts[k[0]];text(k[1]+': '+number(s.total)+(s.total==null?'':' '+k[2])+' · дней со значением: '+s.dataDays,24);if(s.missingRecords)text('Неизвестных значений: '+s.missingRecords+'; сумма неполная.',22,400,C.muted);});
+    var ws=[];data.days.forEach(function(d){ws=ws.concat(d.workouts);});var load=R.loadOf?R.loadOf(ws):{},keys=Object.keys(load).filter(function(k){return finite(load[k])>0;}).sort(function(a,b){return load[b]-load[a];});
+    if(keys.length){var max=Math.max.apply(null,keys.map(function(k){return load[k];}));ensure(630);raw('anatomy',590,{load:load,max:max});text('Цвет — относительное число записанных условных подходов в этом периоде, не оценка восстановления или безопасности.',22,400,C.muted);keys.forEach(function(k){ensure(68);raw('bar',64,{label:R.MUS&&R.MUS[k]||k,value:load[k],max:max});});}else text('Нет данных для карты мышц: нужны упражнения с рабочими подходами и указанными мышцами. Это не нулевая нагрузка.',23,400,C.muted);
+    section('Прочие факты');text('Замеров: '+t.bodyRecords+' · приёмов: '+t.intakeRecords+' · анализов: '+t.labRecords+' · проверок состояния: '+t.checkinDays,24);text('Исключены невыполненные планы: питание '+t.excludedPlanned.meals+', тренировки '+t.excludedPlanned.workouts+'.',23,400,C.muted);text('Суммы и средние описывают записи, не весь рацион/активность. Неизвестное не заменяется нулём. Данные и расчёты не являются диагнозом.',23,400,C.muted);data.coverage.warnings.forEach(function(w){text(w,22,400,C.muted);});
+    pages.forEach(function(p,i){p.number=i+1;p.height=i===pages.length-1?Math.min(HEIGHT,Math.max(700,y+90)):HEIGHT;});return pages;
   }
-  async function fontsReady() {
-    if (!document.fonts || !document.fonts.load) return;
-    try {
-      await Promise.race([Promise.all(['600 60px Oswald', '500 30px Oswald', '400 28px "Golos Text"', '500 28px "Golos Text"', '600 28px "Golos Text"'].map(function (f) { return document.fonts.load(f, 'АБВабв123'); })),
-        new Promise(function (r) { setTimeout(r, 3000); })]);
-    } catch (e) { }
+  function drawText(g,text,x,y,size,weight,color){font(g,size,weight);g.fillStyle=color||C.ink;g.textBaseline='top';g.textAlign='left';g.fillText(text,x,y);}
+  function anatomy(g,cmd){var x=M,y=cmd.y,scale=520/2200,an=window.ANATOMY;if(!an){drawText(g,'Карта тела недоступна; все значения перечислены ниже.',M,y,24,400,C.muted);return;}['front','back'].forEach(function(side,i){(an[side]||[]).forEach(function(group){var key=/soleus/.test(group.m)?'calves':group.m,col=cmd.load[key]>0?loadColor(cmd.load[key]/cmd.max):C.soft;(group.p||[]).forEach(function(poly){var a=poly.trim().split(/\s+/).map(Number);g.beginPath();for(var j=0;j<a.length;j+=2){var px=x+i*350+a[j]*scale,py=y+a[j+1]*scale;if(j)g.lineTo(px,py);else g.moveTo(px,py);}g.closePath();g.fillStyle=col;g.fill();g.strokeStyle=C.bg;g.lineWidth=1.4;g.stroke();});});drawText(g,i?'Сзади':'Спереди',M+i*350,y+540,22,400,C.muted);});}
+  function loadColor(v){return 'hsl('+Math.round(120*(1-Math.max(0,Math.min(1,v))))+',55%,42%)';}
+  async function fontsReady(){if(document.fonts&&document.fonts.load)try{await Promise.race([Promise.all(['600 36px Geologica','400 26px "Golos Text"'].map(function(f){return document.fonts.load(f,'АБВ123');})),new Promise(function(r){setTimeout(r,2500);})]);}catch(e){}}
+  async function renderPages(data,isCurrent){await fontsReady();var c=document.createElement('canvas');c.width=WIDTH;c.height=HEIGHT;var g=c.getContext('2d');if(!g)throw new Error('Рисование PNG недоступно.');var pages=layout(data,g),blobs=[];
+    try{for(var i=0;i<pages.length;i++){if(isCurrent&&!isCurrent())throw new Error('Сборка отменена: период изменился.');sameUser(data.owner);var p=pages[i];c.height=p.height;g=c.getContext('2d');g.fillStyle=C.bg;g.fillRect(0,0,WIDTH,p.height);g.fillStyle=C.ink;g.fillRect(0,0,WIDTH,140);drawText(g,'ЗАДАЧИ · ХРОНОЛОГИЧЕСКИЙ ОТЧЁТ',M,28,25,600,'#fff');drawText(g,longDay(data.from)+' — '+longDay(data.to)+'  ·  '+(i+1)+' / '+pages.length,M,78,24,400,'#fff');p.commands.forEach(function(cmd){if(cmd.type==='text')drawText(g,cmd.text,cmd.x||M,cmd.y,cmd.size,cmd.weight,cmd.color);if(cmd.type==='line'){g.fillStyle=C.line;g.fillRect(M,cmd.y+12,WIDTH-2*M,2);}if(cmd.type==='anatomy')anatomy(g,cmd);if(cmd.type==='bar'){drawText(g,cmd.label+' · '+number(cmd.value)+' усл. подходов',M,cmd.y,24,500);g.fillStyle=C.soft;g.fillRect(M,cmd.y+39,WIDTH-2*M,12);g.fillStyle=loadColor(cmd.value/cmd.max);g.fillRect(M,cmd.y+39,(WIDTH-2*M)*cmd.value/cmd.max,12);}});drawText(g,'Сформировано '+new Date().toLocaleString('ru-RU')+' · личные записи, не медицинское заключение',M,p.height-46,20,400,C.muted);blobs.push(await new Promise(function(resolve,reject){c.toBlob(function(b){b?resolve(b):reject(new Error('Не удалось создать PNG. Сократи период.'));},'image/png');}));}}finally{c.width=1;c.height=1;}return{pages:blobs,data:data};
   }
-  async function build(period, d) {
-    await fontsReady();
-    var c = period === 'week' ? await weekReport(d) : await dayReport(d);
-    return new Promise(function (res, rej) { c.toBlob(function (b) { b ? res(b) : rej(new Error('Не удалось собрать картинку')); }, 'image/png'); });
+  function monday(d){return addDays(d,-((new Date(d+'T12:00:00').getDay()+6)%7));}
+  function periodRange(period,day,to){if(period==='range')return validateRange(day,to);if(period==='week'){var from=monday(day),end=addDays(from,6);return validateRange(from,end>T()?T():end);}return validateRange(day,day);}
+  async function buildPages(period,day,to){var range=periodRange(period,day,to);return renderPages(await collect(range.from,range.to));}
+  async function build(period,day,to){var result=await buildPages(period,day,to);if(result.pages.length>1)throw new Error('Отчёт содержит '+result.pages.length+' PNG. Открой окно отчёта, чтобы сохранить все страницы.');return result.pages[0];}
+  function fileName(s,page){return 'Report_'+s.from+'_'+s.to+'_'+String(page+1).padStart(3,'0')+'.png';}
+  var CUR={pages:[],urls:[],owner:null},SEQ=0;
+  function isNative(){return !!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform()&&Capacitor.nativePromise);}
+  function rangeFor(s){return periodRange(s.period,s.period==='range'?s.from:s.day,s.to);}
+  function sheet(s){var controls=[['day','День'],['week','Неделя'],['range','Период']].map(function(p){return '<button type="button" class="chip'+(s.period===p[0]?' on':'')+'" data-a="hRepP" data-v="'+p[0]+'">'+p[1]+'</button>';}).join('');
+    function date(key,label,value){return '<label><span class="gl">'+label+'</span><input class="fld" type="date" data-rep-field="'+key+'" value="'+E(value)+'" max="'+T()+'" required></label>';}
+    var body='<div class="chips">'+controls+'</div>'+(s.period==='range'?'<div class="row2">'+date('from','С',s.from)+date('to','По',s.to)+'</div>':date('day',s.period==='week'?'Любой день недели':'Дата',s.day))+'<div class="gh">По дням от ранних к поздним, затем отдельный общий итог. До '+MAX_DAYS+' дней. Нет данных ≠ ноль. Невыполненные планы не включаются.</div><button type="button" class="btn2" data-a="hRepRefresh"'+(s.busy?' disabled':'')+'>Обновить отчёт</button>';
+    if(s.totalPages>1)body+='<label><span class="gl">PNG-страница '+(s.page+1)+' из '+s.totalPages+'</span><select class="fld" data-rep-page>'+Array.from({length:s.totalPages},function(_,i){return '<option value="'+i+'"'+(i===s.page?' selected':'')+'>Страница '+(i+1)+(i===s.totalPages-1?' · итог / окончание':'')+'</option>';}).join('')+'</select></label><div class="gh">Отчёт разделён без обрезки. Можно сохранить выбранную PNG или все страницы одним ZIP.</div>';
+    body+='<div class="rprev">'+(s.err?'<div class="empty" role="alert">'+E(s.err)+'</div>':s.url&&CUR.owner===X.ME?'<img src="'+E(s.url)+'" alt="Отчёт: PNG-страница '+(s.page+1)+' из '+s.totalPages+'">':'<div class="empty" role="status">Собираю отчёт…</div>')+'</div>';
+    var ready=!!s.url&&CUR.owner===X.ME&&!s.busy&&!s.exporting,foot='<button class="btn" data-a="hRepSave"'+(ready?'':' disabled')+'>Сохранить PNG'+(s.totalPages>1?' '+(s.page+1)+'/'+s.totalPages:'')+'</button>'+(s.totalPages>1?'<button class="btn2" data-a="hRepZip"'+(ready?'':' disabled')+'>Все PNG в ZIP</button>':'')+(isNative()||navigator.canShare&&navigator.share?'<button class="btn2" data-a="hRepShare"'+(ready?'':' disabled')+'>Поделиться PNG</button>':'');return{title:'Отчёт по дням',body:body,foot:foot};
   }
-  function fileName(s) { return 'Отчёт_' + (s.period === 'week' ? 'неделя_' + monday(s.day) : 'день_' + s.day) + '.png'; }
-
-  /* ---------- окно отчёта ---------- */
-  var ICON = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 17v-3M12 17v-6M15 17v-4"/></svg>';
-  var CUR = { blob: null, url: '', key: '' }, SEQ = 0;
-  function isNative() { return !!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() && Capacitor.nativePromise); }
-  function sheet(s) {
-    var body = '<div class="chips">' + [['day', 'За день'], ['week', 'За неделю']].map(function (p) {
-      return '<button type="button" class="chip' + (s.period === p[0] ? ' on' : '') + '" data-a="hRepP" data-v="' + p[0] + '">' + p[1] + '</button>';
-    }).join('') + '</div>' +
-      '<label><div class="gl">' + (s.period === 'week' ? 'Любой день нужной недели' : 'День') + '</div><input class="fld" type="date" data-f="day" value="' + esc(s.day) + '" max="' + T() + '" min="' + addDays(T(), -120) + '"></label>' +
-      (s.period === 'week' ? '<div class="gh">Неделя с понедельника по воскресенье: ' + esc(dm(monday(s.day)) + ' – ' + dm(addDays(monday(s.day), 6))) + '.</div>' : '') +
-      '<div class="rprev">' + (s.err ? '<div class="empty">' + esc(s.err) + '</div>' : s.url ? '<img src="' + s.url + '" alt="Отчёт">' : '<div class="empty">Собираю отчёт…</div>') + '</div>';
-    var ready = !!s.url && !s.busy;
-    var foot = '<button class="btn" data-a="hRepSave"' + (ready ? '' : ' disabled') + '>Сохранить</button>' +
-      (isNative() || (navigator.canShare && navigator.share) ? '<button class="btn2" data-a="hRepShare"' + (ready ? '' : ' disabled') + '>Поделиться</button>' : '');
-    return { title: 'Отчёт', body: body, foot: foot };
-  }
-  async function regen() {
-    var s = UI.sheet; if (!s || s.type !== 'h-report') return;
-    var key = s.period + ':' + s.day, my = ++SEQ;
-    if (CUR.key === key && CUR.url) { s.url = CUR.url; s.busy = false; renderSheet(); return; }
-    s.busy = true; s.url = ''; s.err = ''; renderSheet();
-    try {
-      var b = await build(s.period, s.day);
-      if (my !== SEQ || UI.sheet !== s) return;
-      if (CUR.url) URL.revokeObjectURL(CUR.url);
-      CUR = { blob: b, url: URL.createObjectURL(b), key: key };
-      s.url = CUR.url; s.busy = false; renderSheet();
-    } catch (e) { if (my === SEQ && UI.sheet === s) { s.busy = false; s.err = 'Не получилось собрать отчёт: ' + ((e && e.message) || e); renderSheet(); } }
-  }
-  function b64(blob) { return new Promise(function (res, rej) { var fr = new FileReader(); fr.onload = function () { res(String(fr.result).split(',')[1]); }; fr.onerror = rej; fr.readAsDataURL(blob); }); }
-  function oldApk(e) { return /not implemented|unimplemented|not available/i.test(String((e && (e.message || e.code)) || e)); }
-  async function save() {
-    var s = UI.sheet; if (!CUR.blob) return;
-    if (isNative()) {
-      try { await Capacitor.nativePromise('WidgetBridge', 'saveImage', { data: await b64(CUR.blob), name: fileName(s) }); toast('Сохранено в галерею: Pictures/Задачи'); }
-      catch (e) { if (/old_android/.test(String(e && e.message))) return share(); toast(oldApk(e) ? 'Обнови приложение: Настройки → Скачать APK' : 'Не удалось сохранить: ' + ((e && e.message) || e)); }
-      return;
-    }
-    var a = document.createElement('a'); a.href = CUR.url; a.download = fileName(s); document.body.appendChild(a); a.click(); a.remove();
-    toast('Файл скачан');
-  }
-  async function share() {
-    var s = UI.sheet; if (!CUR.blob) return;
-    if (isNative()) {
-      try { await Capacitor.nativePromise('WidgetBridge', 'shareImage', { data: await b64(CUR.blob), name: fileName(s) }); }
-      catch (e) { toast(oldApk(e) ? 'Обнови приложение: Настройки → Скачать APK' : 'Не удалось отправить: ' + ((e && e.message) || e)); }
-      return;
-    }
-    var f = new File([CUR.blob], fileName(s), { type: 'image/png' });
-    if (navigator.canShare && navigator.canShare({ files: [f] })) {
-      try { await navigator.share({ files: [f], title: 'Отчёт' }); } catch (e) { if (e && e.name !== 'AbortError') save(); }
-    } else save();
-  }
-  Object.assign(A, {
-    hReport: function (v) { UI.sheet = { type: 'h-report', period: v === 'week' ? 'week' : 'day', day: R.day ? R.day() : T(), url: '', busy: true }; renderSheet(true); regen(); },
-    hRepP: function (v) { var s = UI.sheet; if (!s) return; s.period = v; regen(); },
-    hRepSave: function () { save(); },
-    hRepShare: function () { share(); }
-  });
-  document.addEventListener('change', function (e) {
-    var el = e.target, s = UI.sheet;
-    if (s && s.type === 'h-report' && el && el.getAttribute && el.getAttribute('data-f') === 'day' && el.value) { s.day = el.value; regen(); }
-  });
-  window.HREPORT = { sheet: sheet, icon: ICON, build: build };
+  async function regen(){var s=UI.sheet;if(!s||s.type!=='h-report')return;var my=++SEQ;s.busy=true;s.url='';s.err='';s.totalPages=0;X.renderSheet();try{var range=rangeFor(s),result=await renderPages(await collect(range.from,range.to),function(){return my===SEQ&&UI.sheet===s;});if(my!==SEQ||UI.sheet!==s)return;CUR.urls.forEach(function(u){URL.revokeObjectURL(u);});CUR={pages:result.pages,urls:result.pages.map(function(b){return URL.createObjectURL(b);}),owner:result.data.owner,from:range.from,to:range.to};s.from=range.from;s.to=range.to;s.page=0;s.totalPages=CUR.pages.length;s.url=CUR.urls[0];s.busy=false;X.renderSheet();}catch(e){if(my===SEQ&&UI.sheet===s){s.busy=false;s.err='Не получилось собрать отчёт: '+(e.message||e);X.renderSheet();}}}
+  function active(){var s=UI.sheet;if(!s||s.type!=='h-report'||s.busy||s.err||!CUR.pages.length||s.url!==CUR.urls[s.page])return null;sameUser(CUR.owner);return s;}
+  function b64(blob){return blob.arrayBuffer().then(function(buf){var bytes=new Uint8Array(buf),s='';for(var i=0;i<bytes.length;i+=8192)s+=String.fromCharCode.apply(null,bytes.subarray(i,i+8192));return btoa(s);});}
+  function download(blob,name,url){var ownUrl=!url;if(!url)url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();if(ownUrl)setTimeout(function(){URL.revokeObjectURL(url);},30000);}
+  async function save(){try{var s=active();if(!s||s.exporting)return;s.exporting=true;X.renderSheet();var blob=CUR.pages[s.page],name=fileName(s,s.page),owner=CUR.owner;if(isNative()){var data=await b64(blob);sameUser(owner);await Capacitor.nativePromise('WidgetBridge','saveImage',{data:data,name:name});X.toast('PNG сохранён в Pictures/Задачи');}else{download(blob,name,CUR.urls[s.page]);X.toast('PNG подготовлен. Проверь загрузки.');}}catch(e){X.toast('Не удалось сохранить: '+(e.message||e));}finally{if(s){s.exporting=false;if(UI.sheet===s)X.renderSheet();}}}
+  async function share(){try{var s=active();if(!s||s.exporting)return;s.exporting=true;X.renderSheet();var blob=CUR.pages[s.page],name=fileName(s,s.page),owner=CUR.owner;if(isNative()){var data=await b64(blob);sameUser(owner);await Capacitor.nativePromise('WidgetBridge','shareImage',{data:data,name:name});}else{var f=new File([blob],name,{type:'image/png'});if(navigator.canShare&&navigator.canShare({files:[f]}))await navigator.share({files:[f],title:'Отчёт по дням'});else download(blob,name,CUR.urls[s.page]);}}catch(e){if(e.name!=='AbortError')X.toast('Не удалось отправить: '+(e.message||e));}finally{if(s){s.exporting=false;if(UI.sheet===s)X.renderSheet();}}}
+  /* ZIP store (PNG is compressed already), UTF-8 names, no external library. */
+  var CRC_TABLE=null;
+  function crc32(bytes){if(!CRC_TABLE){CRC_TABLE=new Uint32Array(256);for(var n=0;n<256;n++){var c=n;for(var k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;CRC_TABLE[n]=c>>>0;}}var crc=0xFFFFFFFF;for(var i=0;i<bytes.length;i++)crc=CRC_TABLE[(crc^bytes[i])&255]^(crc>>>8);return(crc^0xFFFFFFFF)>>>0;}
+  function header(len){var a=new Uint8Array(len);return{a:a,d:new DataView(a.buffer)};}
+  async function zip(files){var parts=[],central=[],offset=0,centralSize=0;for(var i=0;i<files.length;i++){var name=new TextEncoder().encode(files[i].name),bytes=new Uint8Array(await files[i].blob.arrayBuffer()),crc=crc32(bytes),h=header(30);h.d.setUint32(0,0x04034B50,true);h.d.setUint16(4,20,true);h.d.setUint16(6,0x800,true);h.d.setUint16(12,33,true);h.d.setUint32(14,crc,true);h.d.setUint32(18,bytes.length,true);h.d.setUint32(22,bytes.length,true);h.d.setUint16(26,name.length,true);parts.push(h.a,name,bytes);var c=header(46);c.d.setUint32(0,0x02014B50,true);c.d.setUint16(4,20,true);c.d.setUint16(6,20,true);c.d.setUint16(8,0x800,true);c.d.setUint16(14,33,true);c.d.setUint32(16,crc,true);c.d.setUint32(20,bytes.length,true);c.d.setUint32(24,bytes.length,true);c.d.setUint16(28,name.length,true);c.d.setUint32(42,offset,true);central.push(c.a,name);centralSize+=46+name.length;offset+=30+name.length+bytes.length;}var end=header(22);end.d.setUint32(0,0x06054B50,true);end.d.setUint16(8,files.length,true);end.d.setUint16(10,files.length,true);end.d.setUint32(12,centralSize,true);end.d.setUint32(16,offset,true);return new Blob(parts.concat(central,[end.a]),{type:'application/zip'});}
+  async function saveZip(){try{var s=active();if(!s||s.exporting)return;s.exporting=true;X.renderSheet();var owner=CUR.owner,blob=await zip(CUR.pages.map(function(b,i){return{blob:b,name:fileName(s,i)};})),name='Reports_'+s.from+'_'+s.to+'.zip';sameUser(owner);if(isNative()){var data=await b64(blob);sameUser(owner);await Capacitor.nativePromise('WidgetBridge','saveFile',{data:data,name:name,mime:'application/zip'});X.toast('Все PNG сохранены ZIP в Загрузки/Задачи');}else{download(blob,name);X.toast('ZIP всех PNG подготовлен.');}}catch(e){X.toast('Не удалось сохранить ZIP: '+(e.message||e));}finally{if(s){s.exporting=false;if(UI.sheet===s)X.renderSheet();}}}
+  var ICON='<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 17v-3M12 17v-6M15 17v-4"/></svg>';
+  Object.assign(A,{hReport:function(v){var day=R.day?R.day():T();UI.sheet={type:'h-report',period:v==='week'?'week':'day',day:day,from:day,to:day,page:0,totalPages:0,url:'',busy:true};X.renderSheet(true);regen();},hRepP:function(v){var s=UI.sheet;if(!s||s.type!=='h-report'||s.exporting||['day','week','range'].indexOf(v)<0)return;s.period=v;regen();},hRepRefresh:regen,hRepSave:save,hRepShare:share,hRepZip:saveZip});
+  document.addEventListener('change',function(e){var s=UI.sheet,el=e.target;if(!s||s.type!=='h-report'||!el||!el.getAttribute||s.exporting)return;var key=el.getAttribute('data-rep-field');if(key&&['day','from','to'].indexOf(key)>=0){s[key]=el.value;regen();}if(el.hasAttribute('data-rep-page')){var p=+el.value;if(Number.isInteger(p)&&p>=0&&p<CUR.pages.length){s.page=p;s.url=CUR.urls[p];X.renderSheet();}}});
+  window.HREPORT={sheet:sheet,icon:ICON,build:build,buildPages:buildPages,collect:collect,renderPages:renderPages,helpers:{finite:finite,validDay:validDay,validateRange:validateRange,periodRange:periodRange,stat:stat,nutrition:nutrition,workoutStats:workoutStats,stepDays:stepDays,totals:totals,makeData:makeData,layout:layout,crc32:crc32,zip:zip,limits:{days:MAX_DAYS,pageHeight:HEIGHT,pages:MAX_PAGES,rows:MAX_ROWS}}};
 })();

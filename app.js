@@ -81,7 +81,7 @@ function err(e){console.error(e);toast('Не получилось: '+(e&&e.messa
 async function q(p){var r=await p;if(r.error)throw r.error;return r.data;}
 
 async function loadAll(){
-  var since=addDays(T(),-400);
+  var owner=ME;if(!owner)return;var since=addDays(T(),-400);
   var res=await Promise.all([
     q(sb.from('profiles').select('*')),
     q(sb.from('lists').select('*').order('sort').order('created_at')),
@@ -94,6 +94,7 @@ async function loadAll(){
     q(sb.from('templates').select('*').order('created_at')),
     q(sb.from('note_members').select('*')).catch(function(){return [];})
   ]);
+  if(ME!==owner)return;
   D.profiles=res[0];D.lists=res[1];D.members=res[2];D.tasks=res[3];D.log=res[4];D.habits=res[5];
   D.marks={};res[6].forEach(function(m){(D.marks[m.habit_id]=D.marks[m.habit_id]||{})[m.day]=m.count;});
   D.notes=res[7];D.templates=res[8];D.nmembers=res[9]||[];
@@ -103,6 +104,8 @@ async function loadAll(){
   if(window.HEALTH)await HEALTH.load();
   if(window.WELL)await WELL.load();
   if(window.GROWTH)await GROWTH.load();
+  if(window.ACTIVITY)await ACTIVITY.load();
+  if(window.INVENTORY)await INVENTORY.load();
 }
 var reloadTimer=null;
 function reloadSoon(){clearTimeout(reloadTimer);reloadTimer=setTimeout(function(){loadAll().then(render).catch(function(){});},400);}
@@ -146,6 +149,9 @@ function subscribe(){
     .on('postgres_changes',{event:'*',schema:'public',table:'growth_goals'},reloadSoon)
     .on('postgres_changes',{event:'*',schema:'public',table:'skill_sessions'},reloadSoon)
     .on('postgres_changes',{event:'*',schema:'public',table:'daily_checkins'},reloadSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'activity_logs'},reloadSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'cooking_plans'},reloadSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'cooking_results'},reloadSoon)
     .subscribe();
 }
 document.addEventListener('visibilitychange',function(){if(!document.hidden&&ME)reloadSoon();});
@@ -241,28 +247,36 @@ function nextOcc(t){
 async function patchTask(id,fields){
   var t=findTask(id);if(!t)return;var before=Object.assign({},t);Object.assign(t,fields);render();
   try{var row=await q(sb.from('tasks').update(fields).eq('id',id).select().single());Object.assign(t,row);render();}
-  catch(e){Object.assign(t,before);render();err(e);}
+  catch(e){Object.assign(t,before);render();err(e);return null;}
   return before;
 }
 var CHEERS=['Готово','Отлично','Сделано','Так держать','Плюс одно дело'];
+var TASK_MUTATING=new Set();
 async function completeTask(id){
-  var t=findTask(id);if(!t)return;var before=Object.assign({},t);var fields;var msg;
+  var t=findTask(id);if(!t||t.done||TASK_MUTATING.has(id))return false;TASK_MUTATING.add(id);var before=Object.assign({},t);var fields;var msg;
+  try{
   if(t.recur!=='none'&&t.due_date){var n=nextOcc(t);fields={due_date:n.due_date,due_time:n.due_time,subs:(t.subs||[]).map(function(s){return Object.assign({},s,{done:false});})};msg='Следующий раз: '+dayWord(n.due_date).toLowerCase()+(n.due_time?' в '+n.due_time:'');}
   else{fields={done:true,done_at:new Date().toISOString(),done_by:ME};msg=SET.rewards?leftMsg(id):'Выполнено';}
   var logRow=null;
-  patchTask(id,fields);
+  if(!await patchTask(id,fields))return false;
   try{logRow=await q(sb.from('task_log').insert({task_id:t.id,list_id:t.list_id,title:t.title,day:T()}).select().single());D.log.unshift(logRow);render();}catch(e){err(e);}
-  toast((SET.rewards?CHEERS[Math.floor(Math.random()*CHEERS.length)]+'. ':'')+msg,function(){
-    patchTask(id,{done:before.done,done_at:before.done_at,done_by:before.done_by,due_date:before.due_date,due_time:before.due_time,subs:before.subs});
+  toast((SET.rewards?CHEERS[Math.floor(Math.random()*CHEERS.length)]+'. ':'')+msg,async function(){
+    if(!await patchTask(id,{done:before.done,done_at:before.done_at,done_by:before.done_by,due_date:before.due_date,due_time:before.due_time,subs:before.subs}))return;
     if(logRow){D.log=D.log.filter(function(l){return l.id!==logRow.id;});sb.from('task_log').delete().eq('id',logRow.id).then(function(){});}
+    if(window.INVENTORY)await INVENTORY.load();render();
   });
+  if(window.INVENTORY)await INVENTORY.load();render();return true;
+  }finally{TASK_MUTATING.delete(id);}
 }
 function leftMsg(exceptId){var n=myTasks().filter(function(t){return t.id!==exceptId&&!t.done&&groupOf(t)==='today';}).length;return n?'На сегодня осталось '+n:'На сегодня всё сделано';}
 async function reopenTask(id){
-  await patchTask(id,{done:false,done_at:null,done_by:null});
+  if(TASK_MUTATING.has(id))return false;TASK_MUTATING.add(id);
+  try{
+  if(!await patchTask(id,{done:false,done_at:null,done_by:null}))return false;
   var l=D.log.filter(function(x){return x.task_id===id;})[0];
   if(l){D.log=D.log.filter(function(x){return x!==l;});sb.from('task_log').delete().eq('id',l.id).then(function(){});}
-  render();toast('Задача снова в работе');
+  if(window.INVENTORY)await INVENTORY.load();render();toast('Задача снова в работе');return true;
+  }finally{TASK_MUTATING.delete(id);}
 }
 async function createTask(data){
   var row=Object.assign({owner:ME,title:'',status:'active',remind_every:0,remind_times:0,recur:'none',recur_n:2,recur_days:[],prio:0,subs:[]},data);
@@ -312,7 +326,7 @@ async function setMark(h,day,val){
   var m=D.marks[h.id]=D.marks[h.id]||{};var before=m[day]||0;
   if(val)m[day]=val;else delete m[day];render();
   try{if(val)await q(sb.from('habit_marks').upsert({habit_id:h.id,day:day,count:val}));else await q(sb.from('habit_marks').delete().eq('habit_id',h.id).eq('day',day));}
-  catch(e){if(before)m[day]=before;else delete m[day];render();err(e);}
+  catch(e){if(before)m[day]=before;else delete m[day];render();err(e);return null;}
   return before;
 }
 function daysText(h){if(!h.days||!h.days.length)return'каждый день';if(h.days.length===5&&h.days.indexOf(5)<0&&h.days.indexOf(6)<0)return'по будням';return h.days.slice().sort().map(function(i){return WD[i];}).join(', ');}
@@ -714,7 +728,7 @@ function sidebar(){
   var h='<div class="logo" style="padding:0 12px"><b>'+I('check')+'</b><span>задачи</span></div><button class="btn sidenew" data-a="add">'+I('plus')+'<span>Новая задача</span></button>'
     +grp('Планирование',nav('tasks','sun','Задачи',todayN||'')+nav('inbox','inbox','Входящие',inbox().length||'')+nav('calendar','cal','Календарь')+nav('habits','drop','Привычки')+nav('diary','book','Дневник'))
     +grp('Тело и здоровье',nav('food','leaf','Питание')+nav('fit','dumb','Тренировки')+nav('well','heart','Здоровье')+nav('support','star','Поддержка'))
-    +grp('Развитие',nav('growth','star','Развитие'))
+    +grp('Цели',nav('growth','star','Цели'))
     +grp('Инструменты',nav('notes','note','Заметки')+nav('assistant','spark','Помощник')+nav('guide','book','Как пользоваться'));  var own=D.lists.filter(function(l){return !isShared(l);}),sh=D.lists.filter(isShared);
   var li=function(l){var n=myTasks().filter(function(t){return t.list_id===l.id&&!t.done;}).length;return '<button class="'+(UI.view==='tasks'&&UI.filter===l.id?'on':'')+'" data-a="filter" data-v="'+l.id+'"><i class="dot" style="--c:'+esc(l.color)+'"></i><span class="l">'+esc(l.name)+'</span><span class="n">'+(l.hidden?I('eyeoff'):'')+(n||'')+'</span></button>';};
   h+='<div class="nav"><div class="t">Списки</div>'+own.map(li).join('')+'<button data-a="listNew">'+I('plus')+'<span class="l">Новый список</span></button></div>';
@@ -730,10 +744,10 @@ function bottomNav(){
 function moreView(){
   var n=inbox().length;
   var r=function(v,icn,t,x){return '<button class="lrow" data-a="go" data-v="'+v+'">'+I(icn)+'<b>'+t+'</b>'+(x||'')+I('right')+'</button>';};
-  return '<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">Ещё</h1></div></div><div class="fields" style="margin-top:18px">'+r('growth','star','Развитие')+r('guide','book','Как пользоваться')+r('inbox','inbox','Входящие',n?'<span class="badge">'+n+'</span>':'')+r('habits','drop','Привычки')+r('food','leaf','Питание')+r('fit','dumb','Тренировки')+r('well','heart','Здоровье')+r('support','star','Поддержка')+r('diary','book','Дневник')+'<button class="lrow" data-a="lists">'+I('list')+'<b>Списки</b>'+I('right')+'</button><button class="lrow" data-a="settings">'+I('gear')+'<b>Настройки</b>'+I('right')+'</button></div>';
+  return '<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">Ещё</h1></div></div><div class="fields" style="margin-top:18px">'+r('growth','star','Цели')+r('guide','book','Как пользоваться')+r('inbox','inbox','Входящие',n?'<span class="badge">'+n+'</span>':'')+r('habits','drop','Привычки')+r('food','leaf','Питание')+r('fit','dumb','Тренировки')+r('well','heart','Здоровье')+r('support','star','Поддержка')+r('diary','book','Дневник')+'<button class="lrow" data-a="lists">'+I('list')+'<b>Списки</b>'+I('right')+'</button><button class="lrow" data-a="settings">'+I('gear')+'<b>Настройки</b>'+I('right')+'</button></div>';
 }
 function mainContent(){
-  switch(UI.view){case'growth':return window.GROWTH?GROWTH.view():'<div class="empty">Раздел развития загружается. Обнови страницу.</div>';case'guide':return window.APPTOOLS?APPTOOLS.guide():'';case'inbox':return inboxView();case'calendar':return calView();case'diary':return diaryView();case'habits':return habitsView();case'food':return window.HEALTH?HEALTH.foodView():'';case'fit':return window.HEALTH?HEALTH.fitView():'';case'well':return window.WELL?WELL.view():'';case'support':return window.WELL?WELL.supportView():'';case'notes':return notesView();case'more':return moreView();case'assistant':return assistantView();default:return tasksView();}
+  switch(UI.view){case'growth':return window.GROWTH?GROWTH.view():'<div class="empty">Раздел целей загружается. Обнови страницу.</div>';case'guide':return window.APPTOOLS?APPTOOLS.guide():'';case'inbox':return inboxView();case'calendar':return calView();case'diary':return diaryView();case'habits':return habitsView();case'food':return window.HEALTH?HEALTH.foodView():'';case'fit':return window.HEALTH?HEALTH.fitView():'';case'well':return window.WELL?WELL.view():'';case'support':return window.WELL?WELL.supportView():'';case'notes':return notesView();case'more':return moreView();case'assistant':return assistantView();default:return tasksView();}
 }
 function render(){
   if(!ME)return;
@@ -1140,8 +1154,8 @@ var A={
   habNew:function(){UI.sheet={type:'habit-edit',name:'',icon:'book',color:COLORS[D.habits.length%COLORS.length],target:1,dmode:'all',days:[],remind:'09:00',times:['09:00'],remind_every:0};renderSheet(true);},
   habOpen:function(v,id){UI.sheet={type:'habit',id:id,off:0};renderSheet(true);},
   habTap:async function(v,id){var h=findHabit(id),t=T();if(h.paused||!sched(h,t)){A.habOpen(v,id);return;}
-    var c=cnt(h,t);if(c>=tgt(h)){await setMark(h,t,0);toast('Отметка снята: '+h.name,function(){setMark(h,t,c);});}
-    else{await setMark(h,t,c+1);toast(c+1>=tgt(h)?(SET.rewards?'Отлично! ':'')+h.name+': выполнено'+(SET.rewards&&streak(h)>1?', '+streak(h)+' '+plural(streak(h),'день','дня','дней')+' подряд':''):h.name+': '+(c+1)+' из '+tgt(h),function(){setMark(h,t,c);});}},
+    var c=cnt(h,t);if(c>=tgt(h)){if(await setMark(h,t,0)===null)return;toast('Отметка снята: '+h.name,function(){setMark(h,t,c);});}
+    else{if(await setMark(h,t,c+1)===null)return;toast(c+1>=tgt(h)?(SET.rewards?'Отлично! ':'')+h.name+': выполнено'+(SET.rewards&&streak(h)>1?', '+streak(h)+' '+plural(streak(h),'день','дня','дней')+' подряд':''):h.name+': '+(c+1)+' из '+tgt(h),function(){setMark(h,t,c);});}},
   habPlus:function(v,id){var h=findHabit(id);setMark(h,T(),cnt(h,T())+1);},
   habMinus:function(v,id){var h=findHabit(id);setMark(h,T(),cnt(h,T())-1);},
   habDay:function(v,id){var h=findHabit(id);setMark(h,v,hDone(h,v)?0:tgt(h));},
