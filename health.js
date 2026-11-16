@@ -180,17 +180,21 @@
     return h + '</div>';
   }
   async function callAI(body) {
+    var owner=X.ME,wait=X.aiWaitRemaining?X.aiWaitRemaining('health'):0;if(wait)throw new Error('Лимит API: подожди ещё '+wait+' сек. Повторный запрос не отправлен.');
     var ses = await sb.auth.getSession();
     var tok = ses.data && ses.data.session && ses.data.session.access_token;
     if (!tok) throw new Error('Нужно войти заново');
+    if(X.ME!==owner)throw new Error('Аккаунт изменился');
     var r = await fetch(SUPA_URL + '/functions/v1/health', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: SUPA_KEY, Authorization: 'Bearer ' + tok },
       body: JSON.stringify(body)
     });
     var j = await r.json().catch(function () { return {}; });
+    if(X.ME!==owner)throw new Error('Аккаунт изменился');
     if (!r.ok || j.error) {
       var m = j.error || ('ошибка ' + r.status);
+      if(X.aiSetWait&&['rate_limit','token_rate_limit','daily_limit'].indexOf(j.error_code)>=0)X.aiSetWait('health',j.retry_after_seconds);
       if (r.status === 404) m = 'Функция health ещё не опубликована в Supabase';
       throw new Error(m);
     }
@@ -1316,7 +1320,8 @@
       callAI: callAI, photoBlob: photoBlob, blobB64: blobB64, BLOBS: BLOBS, shrink: shrink, BUCKET: BUCKET, CAM: CAM, KIND: KIND, cleanMicros: cleanMicros,
       meals: function () { return H.meals; }, isDone: isDone, load: load,
       updateMealMicros: async function (id, micros) {
-        var row = await q(sb.from('meals').update({ micros: micros }).eq('id', id).select().single());
+        var owner=X.ME,row = await q(sb.from('meals').update({ micros: micros }).eq('owner',owner).eq('id', id).select().single());
+        if(owner!==X.ME)throw new Error('Аккаунт изменился');
         var i = H.meals.findIndex(function (x) { return x.id === id; }); if (i >= 0) H.meals[i] = row; return row;
       }
     }

@@ -610,6 +610,9 @@ function startVoice(target){
 /* помощник */
 var AS={msgs:[],busy:false,loaded:null,draft:'',follow:true,unread:false,forceBottom:false,observer:null,viewportBase:0,viewportWidth:0};
 var AS_TASK_ADDING=new WeakSet();
+var AI_WAITS={};
+function aiWaitRemaining(kind){var x=AI_WAITS[ME+':'+kind]||0;return Math.max(0,Math.ceil((x-Date.now())/1000));}
+function aiSetWait(kind,seconds){if(typeof seconds==='number'&&isFinite(seconds)&&seconds>0)AI_WAITS[ME+':'+kind]=Date.now()+Math.min(86400,Math.ceil(seconds))*1000;}
 function asKey(){return 'zadachi-assistant-'+ME;}
 function asLoad(){if(AS.loaded===ME)return;AS.loaded=ME;AS.draft='';AS.unread=false;AS.forceBottom=true;try{AS.msgs=JSON.parse(localStorage.getItem(asKey())||'[]');}catch(e){AS.msgs=[];}}
 function asSave(){try{localStorage.setItem(asKey(),JSON.stringify(AS.msgs.slice(-40)));}catch(e){}}
@@ -627,7 +630,7 @@ function assistantView(){
   if(!AS.msgs.length)h+='<div class="empty">Спроси что угодно: «что у меня сегодня?», «сколько мне ещё съесть до цели?», «как у меня идут тренировки?».<br>Можно прикрепить фото с подписью: еды, этикетки, экрана тренажёра, весов, продуктов или записи. Я разберу и спрошу, куда это занести: в питание, тренировки, заметки или задачи.</div>';
   AS.msgs.forEach(function(m,mi){
     if(m.role==='user'){h+='<div class="m u" data-mi="'+mi+'">'+(m.photos&&m.photos.length&&window.HEALTH?HEALTH.asPhotos(m.photos):'')+nl(m.content)+'</div>';return;}
-    if(m.error){h+='<div class="m a err" data-mi="'+mi+'">'+nl(m.content)+'</div>';return;}
+    if(m.error){h+='<div class="m a err" data-mi="'+mi+'">'+nl(m.content)+(m.retry&&mi===AS.msgs.length-1?'<div style="margin-top:10px"><button class="btn2" data-a="asRetry" data-v="'+mi+'"'+(AS.busy?' disabled':'')+'>Повторить этот запрос</button></div>':'')+'</div>';return;}
     h+='<div class="m a" data-mi="'+mi+'">'+nl(m.content);
     if(m.plan_title&&window.PLANBOT)h+=PLANBOT.planIntro(m,mi);
     (m.questions||[]).forEach(function(q2){h+='<div class="q">'+I('msg')+'<span>'+esc(q2)+'</span></div>';});
@@ -649,7 +652,10 @@ function assistantView(){
 }
 async function askAssistant(mode,label,noteId,opts){
   if(AS.busy)return;asLoad();
+  var wait=aiWaitRemaining('assistant');if(wait){toast('Лимит API: подожди ещё '+wait+' сек. Повторный запрос не отправлен.');return;}
+  var requestUser=ME;
   var photos=(opts&&opts.photos)||[];
+  if(opts&&opts.retryLast&&AS.msgs.length>=2&&AS.msgs[AS.msgs.length-1].error){var prev=AS.msgs[AS.msgs.length-2];if(prev.role==='user'&&prev.content===label&&JSON.stringify(prev.photos||[])===JSON.stringify(photos))AS.msgs.splice(-2,2);}
   var history=AS.msgs.filter(function(m){return !m.error;}).map(function(m){var c=m.content;if(m.role==='assistant'&&m.tasks&&m.tasks.length)c+='\n(предложено: '+m.tasks.map(function(t){return t.title;}).join('; ')+')';
     if(m.role==='user'&&m.photos&&m.photos.length)c+='\n(к этому сообщению были приложены фото: '+m.photos.length+')';
     if(m.role==='assistant'&&m.entries&&m.entries.length&&window.HEALTH)c+='\n(предложено записать: '+HEALTH.asSummary(m)+')';
@@ -657,15 +663,18 @@ async function askAssistant(mode,label,noteId,opts){
   AS.msgs.push({role:'user',content:label,photos:photos});
   if(mode==='chat'||mode==='support'||mode==='habits'||mode==='growth')history.push({role:'user',content:label});
   AS.busy=true;AS.forceBottom=true;asSave();UI.view='assistant';render();
+  var retryAllowed=true;
   try{
     var images=photos.length&&window.HEALTH?await HEALTH.asImages(photos):[];
-    var r=await sb.functions.invoke(FN_NAME,{body:{mode:mode,messages:history.slice(-12),today:T(),now:fmtLong(T())+', '+nowHM(),note_id:noteId||null,images:images,health_ctx:window.WELL?WELL.summaryText():''}});
-    if(r.error){var msg=r.error.message;try{var j=await r.error.context.json();if(j&&j.error)msg=j.error;}catch(x){}throw new Error(msg);}
+    if(ME!==requestUser)throw new Error('Аккаунт изменился');
+    var r=await sb.functions.invoke(FN_NAME,{body:{mode:mode,current_text:label,messages:history.slice(-12),history_omitted_turns:Math.max(0,history.length-12),today:T(),now:fmtLong(T())+', '+nowHM(),note_id:noteId||null,images:images,health_ctx:window.WELL?WELL.summaryText():''}});
+    if(ME!==requestUser)throw new Error('Аккаунт изменился');
+    if(r.error){var msg=r.error.message;try{var j=await r.error.context.json();if(j&&j.error)msg=j.error;if(j&&['rate_limit','token_rate_limit','daily_limit'].indexOf(j.error_code)>=0)aiSetWait('assistant',j.retry_after_seconds);if(j&&['billing','daily_limit','request_too_large','permission','authentication','unavailable'].indexOf(j.error_code)>=0)retryAllowed=false;}catch(x){}throw new Error(msg);}
     var a=r.data||{},es=window.HEALTH?HEALTH.asEntries(a,photos):[],hasItems=(a.tasks||[]).length||es.length;
     AS.msgs.push({role:'assistant',content:a.reply||'Готово.',plan_title:hasItems?(a.plan_title||((mode==='support'||mode==='habits')?'Предложенный план':'')):'',tasks:a.tasks||[],moves:a.moves||[],questions:a.questions||[],entries:es});
     var auto=opts&&opts.autoAdd&&!a.plan_title&&!(window.PLANBOT&&PLANBOT.hasProposals(a))&&(a.tasks||[]).length&&!(a.questions||[]).length&&a.tasks.length<=5;
-  }catch(e){AS.msgs.push({role:'assistant',error:true,content:'Не получилось: '+(e.message||'ошибка связи')+(/Failed to send|fetch/i.test(e.message||'')?'. Проверь, что функция помощника (assistant) опубликована в Supabase.':'')});}
-  AS.busy=false;asSave();render();
+  }catch(e){if(ME===requestUser)AS.msgs.push({role:'assistant',error:true,retry:retryAllowed?{mode:mode,label:label,noteId:noteId||null,photos:photos}:null,content:'Не получилось: '+(e.message||'ошибка связи')+(/Failed to send|fetch/i.test(e.message||'')?'. Проверь, что функция помощника (assistant) опубликована в Supabase.':'')});}
+  AS.busy=false;if(ME!==requestUser)return;asSave();render();
   if(typeof auto!=='undefined'&&auto){var mi=AS.msgs.length-1,n=0;for(var i=0;i<AS.msgs[mi].tasks.length;i++){if(await asAddTask(mi,i))n++;}if(n)toast(n===1?'Задача добавлена: '+AS.msgs[mi].tasks[0].title:'Добавлено задач: '+n);}
 }
 function asNearBottom(c){return c.scrollHeight-c.clientHeight-c.scrollTop<64;}
@@ -1224,6 +1233,7 @@ var A={
   htime:function(v){var a=UI.sheet.times=UI.sheet.times||[],i=a.indexOf(v);if(i>=0)a.splice(i,1);else a.push(v);a.sort();renderSheet();},
   asOn:function(){SET.assistant=true;saveSettings();render();},
   asClear:function(){if(!confirm('Очистить переписку с помощником?'))return;AS.msgs=[];asSave();render();},
+  asRetry:function(v){var i=+v,m=AS.msgs[i];if(i!==AS.msgs.length-1||!m||!m.error||!m.retry||AS.busy)return;var r=m.retry;return askAssistant(r.mode,r.label,r.noteId,{photos:r.photos||[],retryLast:true});},
   asLatest:function(){asScroll();},
   asPlan:function(){askAssistant('plan','План на сегодня');},
   asNotes:function(){askAssistant('notes','Разобрать заметки');},
@@ -1346,7 +1356,7 @@ window.__app={A:A,UI:UI,D:D,parseQuick:parseQuick,nextOcc:nextOcc,
   T:T,addDays:addDays,diff:diff,fromKey:fromKey,fmtLong:fmtLong,fmtDM:fmtDM,dayWord:dayWord,esc:esc,uid:uid,plural:plural,I:I,nowHM:nowHM,
   toast:toast,err:err,q:q,sb:sb,SUPA_URL:SUPA_URL,SUPA_KEY:SUPA_KEY,render:render,renderSheet:renderSheet,closeSheet:closeSheet,loadAll:loadAll,
   setMark:setMark,tgt:tgt,sched:sched,cnt:cnt,COLORS:COLORS,WD:WD,askAssistant:askAssistant,
-  AS:AS,asSave:asSave,asAddTask:asAddTask,createTask:createTask,patchTask:patchTask,completeTask:completeTask,reopenTask:reopenTask,deleteTask:deleteTask,findTask:findTask,saveSettings:saveSettings};
+  AS:AS,asSave:asSave,asAddTask:asAddTask,createTask:createTask,patchTask:patchTask,completeTask:completeTask,reopenTask:reopenTask,deleteTask:deleteTask,findTask:findTask,saveSettings:saveSettings,aiWaitRemaining:aiWaitRemaining,aiSetWait:aiSetWait};
 Object.defineProperty(window.__app,'ME',{get:function(){return ME;}});
 Object.defineProperty(window.__app,'SET',{get:function(){return SET;}});
 })();

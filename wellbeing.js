@@ -280,16 +280,18 @@
   async function microAll() {
     var d = nutrition(+WUI.period), list = d.noM.filter(function (m) { return (m.title || '').trim(); });
     if (!list.length || WUI._mb) return;
-    WUI._mb = true; var ok = 0;
+    WUI._mb = true; var ok = 0,owner=X.ME,memo={},calls=0,reused=0;
     for (var i = 0; i < list.length; i++) {
       toast('Оцениваю витамины и минералы: ' + (i + 1) + ' из ' + list.length);
       try {
-        var m = list[i], r = await callAI({ mode: 'micro', title: m.title, grams: m.grams, kcal: m.kcal, protein: m.protein, fat: m.fat, carbs: m.carbs });
+        if(owner!==X.ME)throw new Error('Аккаунт изменился');
+        var m=list[i],request={mode:'micro',title:m.title,grams:m.grams,kcal:m.kcal,protein:m.protein,fat:m.fat,carbs:m.carbs},key=JSON.stringify(request),r;
+        if(Object.prototype.hasOwnProperty.call(memo,key)){r=memo[key];reused++;}else{r=await callAI(request);calls++;if(owner!==X.ME)throw new Error('Аккаунт изменился');}
         var mi = U.cleanMicros(r.micros);
-        if (mi) { await U.updateMealMicros(m.id, mi); ok++; }
+        if (mi) { memo[key]=r;await U.updateMealMicros(m.id,Object.assign({},mi)); ok++; }else throw new Error('Не удалось оценить нутриенты. Пакет остановлен без повторных одинаковых запросов.');
       } catch (e) { err(e); break; }
     }
-    WUI._mb = false; render(); toast('Оценено приёмов пищи: ' + ok);
+    WUI._mb = false; render(); if(owner===X.ME)toast('Оценено приёмов пищи: '+ok+'. API-запросов: '+calls+(reused?'; одинаковых порций повторно использовано: '+reused:'')+'.');
   }
 
   /* ---------- Анализы ---------- */
