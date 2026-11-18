@@ -56,7 +56,7 @@
     return t ? !!t.done : false;
   }
   function field(f, label, val, extra) {
-    return '<label><div class="gl">' + label + '</div><input class="fld" data-f="' + f + '" value="' + esc(val == null ? '' : val) + '" ' + (extra || '') + '></label>';
+    return '<label><div class="gl">' + label + '</div>'+FORMUI.smart('class="fld" data-f="'+f+'" '+(extra||''),val)+'</label>';
   }
   function numField(f, label, val) { return field(f, label, val, 'inputmode="decimal" autocomplete="off"'); }
   function chipSet(f, items, cur) {
@@ -397,7 +397,7 @@
   }
   function fridgeView() {
     var items = H.pantry.filter(function (p) { return p.kind === 'food'; });
-    var h = (window.INVENTORY?INVENTORY.kitchenView():'')+'<form class="hadd-form qtyform" autocomplete="off"><input class="fld" id="hp-name" placeholder="Продукт" aria-label="Продукт">' +
+    var h = (window.INVENTORY?INVENTORY.kitchenView():'')+'<form class="hadd-form qtyform" autocomplete="off">' + FORMUI.line('class="fld" id="hp-name" placeholder="Продукт" aria-label="Продукт"','') +
       '<input class="fld hq" id="hp-qty" inputmode="decimal" placeholder="Кол-во" aria-label="Количество">' +
       '<select class="fld hu" id="hp-unit" aria-label="Единица">' + UNITS.map(function (u) { return '<option>' + u + '</option>'; }).join('') + '</select>' +
       '<button class="btn" type="submit" data-a="hPantryAdd" data-v="food" aria-label="Добавить">' + I('plus') + '</button></form>';
@@ -416,7 +416,7 @@
   function spicesView() {
     var mine = H.pantry.filter(function (p) { return p.kind === 'spice'; });
     var have = mine.map(function (p) { return p.name.toLowerCase(); });
-    var h = '<form class="hadd-form" autocomplete="off"><input class="fld" id="hs-name" placeholder="Своя приправа" aria-label="Приправа"><button class="btn" type="submit" data-a="hPantryAdd" data-v="spice" aria-label="Добавить">' + I('plus') + '</button></form>';
+    var h = '<form class="hadd-form" autocomplete="off">' + FORMUI.line('class="fld" id="hs-name" placeholder="Приправа" aria-label="Приправа"','') + '<button class="btn" type="submit" data-a="hPantryAdd" data-v="spice" aria-label="Добавить">' + I('plus') + '</button></form>';
     h += section('Есть', mine.length ? '<div class="chips">' + mine.map(function (p) { return '<button class="chip on" data-a="hPantryDel" data-id="' + p.id + '" aria-label="Убрать ' + esc(p.name) + '">' + esc(p.name) + I('x') + '</button>'; }).join('') + '</div>' : '<div class="muted">Пока ничего. Отметь ниже то, что есть на кухне.</div>');
     var rest = SPICES.filter(function (s) { return have.indexOf(s.toLowerCase()) < 0; });
     if (rest.length) h += section('Быстро добавить', '<div class="chips">' + rest.map(function (s) { return '<button class="chip" data-a="hSpiceAdd" data-v="' + esc(s) + '">' + I('plus') + esc(s) + '</button>'; }).join('') + '</div>');
@@ -428,7 +428,7 @@
     h += '<div class="chips" style="margin-top:12px">' + APPLIANCES.map(function (a) { var on = have.indexOf(a.toLowerCase()) >= 0; return '<button class="chip' + (on ? ' on' : '') + '" data-a="hApplToggle" data-v="' + esc(a) + '">' + (on ? I('check') : I('plus')) + esc(a) + '</button>'; }).join('') + '</div>';
     var custom = H.appliances.filter(function (a) { return APPLIANCES.map(function (x) { return x.toLowerCase(); }).indexOf(a.name.toLowerCase()) < 0; });
     if (custom.length) h += '<div class="chips" style="margin-top:10px">' + custom.map(function (a) { return '<button class="chip on" data-a="hApplToggle" data-v="' + esc(a.name) + '">' + I('check') + esc(a.name) + '</button>'; }).join('') + '</div>';
-    h += '<form class="hadd-form" style="margin-top:16px" autocomplete="off"><input class="fld" id="ha-name" placeholder="Другая техника" aria-label="Другая техника"><button class="btn" type="submit" data-a="hApplAdd" aria-label="Добавить">' + I('plus') + '</button></form>';
+    h += '<form class="hadd-form" style="margin-top:16px" autocomplete="off">' + FORMUI.line('class="fld" id="ha-name" placeholder="Название техники" aria-label="Название техники"','') + '<button class="btn" type="submit" data-a="hApplAdd" aria-label="Добавить">' + I('plus') + '</button></form>';
     return h;
   }
 
@@ -757,7 +757,7 @@
     h += '</div>';
     var exs = s.exercises || [];
     exs.forEach(function (e, i) {
-      h += '<div class="hex"><div class="hexh"><input class="fld" data-ex="' + i + ':name" value="' + esc(e.name) + '" aria-label="Название упражнения"><button type="button" class="iconbtn" data-a="hExDel" data-v="' + i + '" aria-label="Убрать упражнение">' + I('trash') + '</button></div>';
+      h += '<div class="hex"><div class="hexh">'+FORMUI.line('class="fld" data-ex="'+i+':name" aria-label="Название упражнения"',e.name)+'<button type="button" class="iconbtn" data-a="hExDel" data-v="' + i + '" aria-label="Убрать упражнение">' + I('trash') + '</button></div>';
       (e.sets || []).forEach(function (st, j) {
         h += '<div class="hset"><span class="n">' + (j + 1) + '</span><input class="fld" inputmode="numeric" data-ex="' + i + ':' + j + ':reps" value="' + esc(st.reps) + '" aria-label="Повторы"><span>×</span><input class="fld" inputmode="decimal" data-ex="' + i + ':' + j + ':weight" value="' + esc(st.weight == null ? '' : st.weight) + '" placeholder="свой вес" aria-label="Вес, кг"><span class="u">кг</span>' +
           '<label class="hwarm"><input type="checkbox" data-ex="' + i + ':' + j + ':warmup"' + (st.warmup ? ' checked' : '') + '>разм.</label><button type="button" class="iconbtn" data-a="hSetDel" data-v="' + i + ':' + j + '" aria-label="Убрать подход">' + I('x') + '</button></div>';
@@ -1308,6 +1308,9 @@
   Object.assign(A, actions);
   window.HEALTH = {
     addAssistantEntry: entryAdd,
+    routeState:function(){return {foodTab:HUI.foodTab,day:day()};},routeDay:function(d){HUI.day=d;render();},
+    navState:function(view){return view==='food'?{foodTab:HUI.foodTab,day:day(),kTab:HUI.kTab}:{fitTab:HUI.fitTab,loadP:HUI.loadP||null,progP:HUI.progP||null};},
+    restoreNav:function(s){if(s)Object.assign(HUI,s);},
     load: load, foodView: foodView, fitView: fitView, sheet: sheet,
     asAttach: asAttach, asPending: asPending, asPendingPaths: function () { return PEND.slice(); }, asUploading: function () { return PEND_UP > 0; },
     /* для отчёта (report.js) */

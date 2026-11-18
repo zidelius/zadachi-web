@@ -112,7 +112,7 @@
       (isNative() || navigator.share ? '<button class="btn2" data-a="nfShare">' + (isImg(f) ? 'Поделиться' : 'Открыть в…') + '</button>' : (!isImg(f) ? '<button class="btn2" data-a="nfTab">Открыть</button>' : '')) +
       '<button class="btn2 warn" data-a="nfDel">Удалить</button></div></div>';
   }
-  function showViewer() { var v = document.getElementById('nfview'); if (v) v.outerHTML = viewer(); else document.body.insertAdjacentHTML('beforeend', viewer()); hydrate(); }
+  function showViewer() { var v = document.getElementById('nfview'); if (v) v.outerHTML = viewer(); else document.body.insertAdjacentHTML('beforeend', viewer()); hydrate(); if(window.SITENAV)SITENAV.sync(); }
   function cur() { var n = VIEW && X.D.notes.filter(function (x) { return x.id === VIEW.nid; })[0]; return n ? { n: n, f: files(n)[VIEW.i] } : {}; }
   async function blob(f) {
     if (BLOBS[f.path]) return BLOBS[f.path].b;
@@ -195,6 +195,8 @@
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && VIEW) { VIEW = null; showViewer(); e.stopPropagation(); } }, true);
 
   window.NOTEFILES = {
+    navState:function(){return VIEW&&cur().f?{nid:VIEW.nid,i:VIEW.i}:null;},
+    restoreNav:function(s){if(!s&&!VIEW)return;VIEW=s;if(VIEW&&!cur().f)VIEW=null;showViewer();},
     button: function () { return '<label class="iconbtn" aria-label="Прикрепить файл" title="Прикрепить изображение или файл">' + CLIP + '<input type="file" multiple data-nfile hidden></label>'; },
     block: function (n) { return '<div id="nfiles">' + block(n) + '</div>'; },
     after: hydrate, count: function (n) { return files(n).length; }, clip: CLIP, purge: purge,

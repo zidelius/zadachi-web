@@ -160,12 +160,16 @@
   };
   function setupBack() {
     var APP = plug('App');
+    function minimize() { if (APP.minimizeApp) APP.minimizeApp(); else if (APP.exitApp) APP.exitApp(); }
     APP.addListener('backButton', function () {
+      var nav = window.SITENAV && window.SITENAV.back ? window.SITENAV.back() : null;
+      if (nav === true) return;
+      if (nav === false) { minimize(); return; }
       if (X.UI.sheet) { X.closeSheet(); return; }
       if (X.UI.sel) { X.UI.sel = null; X.render(); return; }
       if (hist.length) { var v = hist.pop(); skipHist = true; try { go0.call(X.A, v); } finally { skipHist = false; } return; }
       if (X.UI.view !== 'tasks') { skipHist = true; try { go0.call(X.A, 'tasks'); } finally { skipHist = false; } return; }
-      if (APP.minimizeApp) APP.minimizeApp(); else if (APP.exitApp) APP.exitApp();
+      minimize();
     });
     ST.back = 'ок';
   }

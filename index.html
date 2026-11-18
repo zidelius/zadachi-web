@@ -8,14 +8,15 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Задачи">
-<title>Задачи</title>
+<title>Задачник — задачи, цели и привычки</title>
+<meta name="description" content="Задачи, привычки и ИИ-помощник в одном недельном цикле: спланировать, повторить и скорректировать.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Oswald:wght@500;600&family=Geologica:wght@300;400;500;600&display=swap">
-<link rel="stylesheet" href="style.css?v=26">
+<link rel="stylesheet" href="style.css?v=33">
 </head>
 <body>
 <div id="app"><div class="loading">Загружаю…</div></div>
@@ -24,20 +25,22 @@
 <div class="toast" id="toast" role="status" aria-live="polite"><span></span><button data-a="undo">Отменить</button></div>
 <noscript>Для работы сайта нужен включённый JavaScript.</noscript>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
-<script src="app.js?v=32"></script>
-<script src="notefiles.js?v=1"></script>
+<script src="form-ui.js?v=1"></script>
+<script src="app.js?v=38"></script>
+<script src="notefiles.js?v=2"></script>
 <script src="anatomy.js?v=1"></script>
-<script src="health.js?v=12"></script>
-<script src="wellbeing.js?v=9"></script>
-<script src="assistant-habits.js?v=4"></script>
-<script src="growth.js?v=2"></script>
+<script src="health.js?v=15"></script>
+<script src="wellbeing.js?v=12"></script>
+<script src="assistant-habits.js?v=7"></script>
+<script src="growth.js?v=7"></script>
 <script src="activity.js?v=1"></script>
-<script src="inventory.js?v=1"></script>
-<script src="report.js?v=2"></script>
-<script src="app-tools.js?v=2"></script>
-<script src="native.js?v=9"></script>
+<script src="inventory.js?v=2"></script>
+<script src="report.js?v=3"></script>
+<script src="app-tools.js?v=3"></script>
+<script src="assistant-cycle.js?v=9"></script>
+<script src="cycle-start.js?v=3"></script>
+<script src="cycle-week.js?v=4"></script>
+<script src="site-nav.js?v=2"></script>
+<script src="native.js?v=10"></script>
 </body>
 </html>
-
-
-

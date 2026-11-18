@@ -242,8 +242,8 @@
     h += '<div style="display:flex;flex-direction:column;gap:18px;margin-top:6px">';
     h += section('Что подойдёт?', '<div class="muted" style="font-size:13px;line-height:1.45;margin-bottom:8px">Помощник посмотрит вашу аптечку и подскажет, что из неё обычно применяют при этих жалобах. Это справка, не замена врача.</div><div class="chips">' +
       SYMPTOMS.map(function (s) { return '<button class="chip" data-a="wAsk" data-v="' + esc(s) + '">' + esc(s) + '</button>'; }).join('') + '</div>' +
-      '<form class="hadd-form" style="margin-top:10px" autocomplete="off"><input class="fld" id="w-sym" placeholder="Опишите, что беспокоит" aria-label="Симптомы"><button class="btn" type="submit" data-a="wAskText" aria-label="Спросить помощника">' + I('send') + '</button></form>');
-    h += '<form class="hadd-form qtyform" style="margin:0" autocomplete="off"><input class="fld" id="wc-name" placeholder="' + (kind === 'med' ? 'Лекарство' : 'БАД или витамин') + '" aria-label="Название"><input class="fld hq" id="wc-qty" inputmode="decimal" placeholder="Кол-во" aria-label="Количество"><select class="fld hu" id="wc-unit" aria-label="Единица">' + UNITS.map(function (u) { return '<option>' + u + '</option>'; }).join('') + '</select><button class="btn" type="submit" data-a="wCabAdd" aria-label="Добавить">' + I('plus') + '</button></form>';
+      '<form class="hadd-form" style="margin-top:10px" autocomplete="off">'+FORMUI.line('class="fld" id="w-sym" placeholder="Что беспокоит?" aria-label="Симптомы"','')+'<button class="btn" type="submit" data-a="wAskText" aria-label="Подготовить запрос помощнику">' + I('spark') + '</button></form>');
+    h += '<form class="hadd-form qtyform" style="margin:0" autocomplete="off">'+FORMUI.line('class="fld" id="wc-name" placeholder="'+(kind==='med'?'Лекарство':'БАД или витамин')+'" aria-label="Название"','')+'<input class="fld hq" id="wc-qty" inputmode="decimal" placeholder="Кол-во" aria-label="Количество"><select class="fld hu" id="wc-unit" aria-label="Единица">' + UNITS.map(function (u) { return '<option>' + u + '</option>'; }).join('') + '</select><button class="btn" type="submit" data-a="wCabAdd" aria-label="Добавить">' + I('plus') + '</button></form>';
     h += '</div>';
     h += '<button class="btn2" style="width:100%;margin-top:10px" data-a="wItemNew" data-v="photo">' + CAM + 'Добавить по фото упаковки</button>';
     if (!items.length) return h + '<div class="empty">' + (kind === 'med' ? 'Аптечка пуста. Добавьте лекарства, которые у вас есть, и помощник сможет подсказывать, что из них подойдёт.' : 'Здесь пока нет БАДов и витаминов. По фото упаковки состав считается сам, и он попадёт в расчёт нутриентов.') + '</div>' + disclaimer();
@@ -834,9 +834,9 @@
       s.nutrients = (s.nutrients || []).filter(function (n) { return n.key !== s.nk; }).concat([{ key: s.nk, amount: a }]); s.na = ''; renderSheet();
     },
     wNutDel: function (v) { var s = UI.sheet; if (s) { s.nutrients.splice(+v, 1); renderSheet(); } },
-    wAsk: function (v) { A.asAsk('У меня ' + v + '. Что из моей аптечки и БАД может помочь и на что обратить внимание? Когда стоит обратиться к врачу?'); },
-    wAskText: function (v, id, el) { var t = ((el.form.querySelector('#w-sym') || {}).value || '').trim(); if (!t) return; A.asAsk('Что меня беспокоит: ' + t + '. Что из моей аптечки и БАД может помочь и на что обратить внимание? Когда стоит обратиться к врачу?'); },
-    wItemAsk: function () { var s = UI.sheet; if (!s || !s.name) return; var n = s.name + (s.dosage ? ' ' + s.dosage : ''); closeSheet(); A.asAsk('Расскажи про мой препарат «' + n + '»: для чего он применяется, как обычно принимают, какие есть противопоказания и с чем его нельзя сочетать из того, что у меня есть в аптечке и расписании.'); },
+    wAsk: function (v) { if(window.CYCLE)CYCLE.begin('well',null,'Меня беспокоит: '+v+'. Помоги подготовить вопросы для врача и описать наблюдения. Не ставь диагноз и не предлагай менять лекарства или дозировки.'); },
+    wAskText: function (v, id, el) { var t = ((el.form.querySelector('#w-sym') || {}).value || '').trim(); if (!t) return; if(window.CYCLE)CYCLE.begin('well',null,'Меня беспокоит: '+t+'. Помоги подготовить вопросы для врача. Не ставь диагноз и не предлагай менять лекарства или дозировки.'); },
+    wItemAsk: function () { var s = UI.sheet; if(!s||!s.id||!window.CYCLE)return; var item=cabById(s.id); if(!item||item.owner!==X.ME)return; var n=item.name+(item.dosage?' '+item.dosage:''); CYCLE.begin('well',null,'Помоги составить вопросы врачу или фармацевту о позиции «'+n+'». Не меняй дозы и не назначай лечение.'); },
     /* приём */
     wIntakeNew: function () { intakeOpen(null); },
     wIntakeOpen: function (v, id) { var r = W.intakes.filter(function (x) { return x.id === id; })[0]; if (r) intakeOpen(r); },
@@ -907,6 +907,7 @@
   Object.assign(A, actions);
 
   window.WELL = {
+    navState:function(){return {tab:WUI.tab,cab:WUI.cab,period:WUI.period};},restoreNav:function(s){if(s)Object.assign(WUI,s);},
     exportData:function(){return{cabinet:W.cabinet.filter(function(r){return r.owner===X.ME;}),intakes:W.intakes.filter(function(r){return r.owner===X.ME;}),plans:W.plans.filter(function(r){return r.owner===X.ME;}),labs:W.labs.filter(function(r){return r.owner===X.ME;})};},
     load: load, view: view, supportView: supportView, sheet: sheet, habits: function () { return W.habits; }, plans: function () { return W.plans; }, nutMeta: nutMeta, summaryText: summaryText,
     owns: function (t) { return !!OWN[t]; }, asEntries: asEntries, entryInfo: entryInfo, entryText: entryText, addFrom: addFrom
