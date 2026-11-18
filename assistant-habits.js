@@ -42,14 +42,14 @@
   async function addFrom(e){
     if(adding.has(e))throw new Error('Эта запись уже сохраняется');adding.add(e);
     try{
-      var d=e.d,r=await records(),hf,h;
+      var d=e.d,user=X.ME,r=await records(),hf,h;if(!user||X.ME!==user)throw new Error('Аккаунт изменился');
       if(e.t==='growth_goal'){if(!window.GROWTH)throw new Error('Раздел развития ещё не загружен');var goalResult=await GROWTH.addGoalProposal(d);e._existing=goalResult.existing;return;}
       if(e.t==='habit'){
         if(!String(d.name||'').trim()||!validDays(d.days)||!validTimes(d.times)||!(d.target>=1&&d.target<=20))throw new Error('Проверь название и расписание привычки');
         h=r.habits.find(function(x){return !x.finished&&!r.plans.some(function(p){return p.habit_id===x.id;})&&norm(x.name)===norm(d.name);});
-        if(h){cacheHabit(h);e._existing=true;return;}
+        if(h){cacheHabit(h);e._existing=true;e._habitId=h.id;return;}
         hf={name:d.name.trim().slice(0,120),icon:'leaf',color:X.COLORS[2],target:d.target,days:d.days,remind:d.times[0]||null,remind_at:d.times.slice(1),remind_every:0,started_on:X.T(),paused:false,finished:false};
-        cacheHabit(await once('habits',hf,e,'habit'));
+        h=await once('habits',hf,e,'habit');cacheHabit(h);e._habitId=h.id;
       }else if(e.t==='habit_update'){
         h=ordinary(r,d.habit_id);hf={};
         if(d.name!==undefined){if(!String(d.name).trim())throw new Error('Пустое название');if(r.habits.some(function(x){return x.id!==h.id&&!x.finished&&norm(x.name)===norm(d.name);}))throw new Error('Привычка с таким названием уже есть');hf.name=String(d.name).trim().slice(0,120);}
@@ -58,7 +58,7 @@
         if(d.times!==undefined){if(!validTimes(d.times))throw new Error('Некорректное время');hf.remind=d.times[0]||null;hf.remind_at=d.times.slice(1);if(!d.times.length)hf.remind_every=0;}
         if(typeof d.paused==='boolean')hf.paused=d.paused;
         if(!Object.keys(hf).length)throw new Error('Нет изменений для применения');
-        cacheHabit(await q(sb.from('habits').update(hf).eq('id',h.id).eq('owner',X.ME).select().single()));
+        cacheHabit(await q(sb.from('habits').update(hf).eq('id',h.id).eq('owner',X.ME).select().single()));e._habitId=h.id;
       }else if(e.t==='habit_mark'){
         h=ordinary(r,d.habit_id);
         if(!/^\d{4}-\d{2}-\d{2}$/.test(d.day)||isNaN(Date.parse(d.day))||new Date(d.day).toISOString().slice(0,10)!==d.day||d.day>X.T()||!Number.isInteger(d.count)||d.count<0||d.count>X.tgt(h))throw new Error('Проверь дату и число выполнений');
@@ -88,8 +88,8 @@
       for(var j=0;j<(m.entries||[]).length;j++)if(!m.entries[j]._done&&!m.entries[j]._excluded){if(await HEALTH.addAssistantEntry(mi,j,''))saved++;else failed++;}
     }finally{applying.delete(m);X.asSave();X.render();X.toast('Применено: '+saved+(failed?'. Не удалось: '+failed+'. Проверь пункты и повтори.':''));}
   }
-  function panel(kind){return '<form class="pb-request" data-pb-ask="'+kind+'"><b>'+(kind==='support'?'Комплексный план с помощником':'Помощник по привычкам')+'</b><div class="muted">'+(kind==='support'?'Опиши, что не получается. Помощник свяжет задачи, привычки, питание и поддержку в один небольшой план.':'Можно создать привычку, изменить дни и напоминания, поставить на паузу или отметить сделанное.')+'</div><textarea class="fld" id="pb-request-'+kind+'" rows="2" aria-label="Запрос к помощнику" placeholder="'+(kind==='support'?'Например: часто срываюсь с питания. Нужен посильный план, а не только мотивация.':'Например: помоги закрепить привычку готовить обед с вечера.')+'">'+esc(drafts[kind])+'</textarea><button type="button" class="btn" data-a="pbAsk" data-v="'+kind+'">'+X.I('spark')+'Составить предложения</button></form>';}
-  function ask(form,kind){var text=(form.querySelector('textarea').value||'').trim();if(!text){X.toast('Опиши, с чем помочь');return;}if(!X.SET.assistant){A.go('assistant');X.toast('Сначала включи помощника');return;}if(X.AS.busy){X.toast('Дождись текущего ответа');return;}X.askAssistant(kind==='support'?'support':'habits',text);}
+  function panel(kind){return '<form class="pb-request" data-pb-ask="'+kind+'"><b>'+(kind==='support'?'Комплексный план с помощником':'Помощник по привычкам')+'</b><div class="muted">'+(kind==='support'?'Опиши, что не получается. Помощник свяжет задачи, привычки, питание и поддержку в один небольшой план.':'Можно создать привычку, изменить дни и напоминания, поставить на паузу или отметить сделанное.')+'</div><textarea class="fld" id="pb-request-'+kind+'" rows="2" aria-label="Запрос к помощнику" placeholder="'+(kind==='support'?'Например: часто срываюсь с питания. Нужен посильный план, а не только мотивация.':'Например: помоги закрепить привычку готовить обед с вечера.')+'">'+esc(drafts[kind])+'</textarea><button type="button" class="btn" data-a="pbAsk" data-v="'+kind+'">'+X.I('spark')+'Подготовить запрос</button></form>';}
+  function ask(form,kind){var text=(form.querySelector('textarea').value||'').trim();if(!text){X.toast('Опиши, с чем помочь');return;}if(window.CYCLE)CYCLE.begin(kind==='support'?'support':'habits',null,text);}
   A.pbAsk=function(v,id,el){ask(el.closest('form'),v);};A.pbApply=function(v){return apply(+v);};
   document.addEventListener('submit',function(e){if(e.target.matches('[data-pb-ask]')){e.preventDefault();ask(e.target,e.target.getAttribute('data-pb-ask'));}});
   document.addEventListener('input',function(e){var f=e.target.closest('[data-pb-ask]');if(f&&e.target.tagName==='TEXTAREA')drafts[f.getAttribute('data-pb-ask')]=e.target.value;});

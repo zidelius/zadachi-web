@@ -58,7 +58,7 @@
   }
   function mealProposal(d){return mealRow(d);}
 
-  function field(key,label,value,attrs){return '<label><span class="gl">'+E(label)+'</span><input class="fld" id="inv-'+key+'" data-inv-field="'+key+'" value="'+E(value)+'" '+(attrs||'')+(S.saving?' disabled':'')+'></label>';}
+  function field(key,label,value,attrs){return '<label><span class="gl">'+E(label)+'</span>'+FORMUI.smart('class="fld" id="inv-'+key+'" data-inv-field="'+key+'" '+(attrs||'')+(S.saving?' disabled':''),value)+'</label>';}
   function button(action,label,value,cls){return '<button type="button" class="'+(cls||'btn2')+'" data-a="'+action+'"'+(value!=null?' data-v="'+E(value)+'"':'')+(S.saving?' disabled':'')+'>'+E(label)+'</button>';}
   function ingredientLabel(g){var p=item(g.pantry_id);return(p?p.name:'Продукт недоступен')+' — '+amount(g.qty,g.unit);}
   function preview(p){return(p.ingredients||[]).map(ingredientLabel).join('; ')+' → '+amount(p.output_qty,p.output_unit)+' «'+p.output_name+'»';}
