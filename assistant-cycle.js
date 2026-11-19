@@ -7,8 +7,8 @@
     inbox:['Входящие','Разобрать входящие','Помоги разобрать входящие: что принять в работу, что уточнить и что отложить. Не меняй статус чужих задач.','inbox'],
     calendar:['Календарь','Найти время для привычки','Помоги найти в выбранном дне посильное окно для привычки или задачи. Не считай отсутствие записей гарантией свободного времени.','cal'],
     habits:['Привычки','Настроить привычку','Помоги закрепить или упростить одну привычку. Предложи связку «после уже знакомого действия — маленький шаг», минимум на сложный день и способ вернуться после пропуска.','drop'],
-    diary:['Дневник','Понять, что мешает','Посмотри мои недавние записи дневника, если они доступны. Отдели наблюдения от гипотез и предложи один эксперимент на неделю.','book'],
-    notes:['Заметки','Найти следующие действия','Помоги превратить идеи из моих заметок в 1–3 конкретных действия. Не считай черновые мысли обещаниями.','note'],
+    diary:['Дневник','Разобрать отметки','Используй сводку отметок задач и обычных привычек из контекста. Это не текст заметок. Не додумывай пропуски и причины; задай один вопрос, который поможет проверить объяснение.','book'],
+    notes:['Заметки','Разобрать мысль и выбрать действие','Отдели то, что я действительно наблюдал, от моего объяснения. Предложи одно возможное другое объяснение и одну проверку в реальной жизни. Не считай черновые мысли обещаниями; если данных мало, уточни один факт.','note'],
     food:['Питание','Сделать план реальным','Помоги упростить план питания с учётом того, что реально записано, и моего расписания. Не смешивай план и факт. Не предлагай компенсировать еду.','leaf'],
     kitchen:['Кухня','Собрать простой вариант еды','Помоги выбрать простой вариант еды с учётом доступных продуктов и техники. Уточни неизвестное количество. Не предлагай отмечать готовку как сделанную заранее.','coffee'],
     fit:['Тренировки','Подобрать нагрузку','Помоги подобрать посильный следующий тренировочный шаг с учётом фактической нагрузки, восстановления и расписания. Предложи вариант на день с малой энергией.','dumb'],
@@ -17,7 +17,7 @@
     growth:['Цели','Связать цель с действиями','Помоги превратить выбранную цель в недельный эксперимент: одна привычка, одно действие и способ проверить результат. Сначала используй существующие задачи и привычки.','star'],
     skills:['Практика','Спланировать короткую практику','Помоги выбрать короткое упражнение на основе моей цели и предыдущей практики. Не записывай занятие как выполненное, пока я его не сделал.','music'],
     checkin:['Состояние','Адаптировать нагрузку','Учитывая только доступные отметки состояния, помоги выбрать посильное действие и вариант отдыха. Пропуск записи не считай неудачей. Не ставь диагноз.','moon'],
-    review:['Обзор недели','Скорректировать план','Разбери последние 7 дней: что помогло, что мешало, что неизвестно. Разделяй планы и факты. Предложи оставить, упростить или заменить одно действие на следующую неделю.','book'],
+    review:['Обзор недели','Скорректировать план','Разбери доступные факты за выбранный период. Отдели наблюдение от объяснения, предложи альтернативу и изменение только одного условия на следующую неделю. Пустую запись не считай неудачей.','book'],
     guide:['Инструменты','Подобрать нужный инструмент','Подскажи, где в Задачнике выполнить мой сценарий: выбрать цель, создать привычку, запланировать действие или разобрать результат. Не обещай функций за пределами приложения.','gear'],
     settings:['Настройки','Разобраться в настройках','Подскажи, как настроить посильные напоминания и тихие часы. Не меняй настройки и не заявляй, что видишь мои системные настройки.','gear'],
     lists:['Списки','Разложить задачи по спискам','Предложи простую структуру списков для моих задач. Не меняй списки и права доступа.','list'],
@@ -56,12 +56,26 @@
     if(v==='food'&&window.HEALTH&&HEALTH.routeState().foodTab==='kitchen')return'kitchen';
     return v==='more'?'guide':v;
   }
+  function diaryFacts(){
+    var t=X.T(),from=X.addDays(t,-7),to=X.addDays(t,-1),user=X.ME;
+    var taskCount=X.D.log.filter(function(l){return l.user_id===user&&l.day>=from&&l.day<=to;}).length;
+    var excluded=new Set(window.WELL&&WELL.plans?WELL.plans().map(function(p){return p.habit_id;}):[]);
+    var ids=X.D.habits.filter(function(h){return h.owner===user&&!excluded.has(h.id);}).map(function(h){return h.id;});
+    var habitDays=0;
+    for(var i=0;i<7;i++){var day=X.addDays(from,i);ids.forEach(function(id){if(Number((X.D.marks[id]||{})[day])>0)habitDays++;});}
+    return 'Дневник, '+from+' — '+to+': моих отметок выполнения задач — '+taskCount+
+      ', дней с отметкой по обычным привычкам (сумма по привычкам) — '+habitDays+'.'+
+      (!X.historyKnown('log',from)||!X.historyKnown('marks',from)?' История загружена не полностью.':'')+' Нет отметки — неизвестный результат.';
+  }
   function decorate(root){
     var key=routeScene();
     if(!scenes[key]||key==='cycle')return;
     var wrap=root.querySelector('.wrap'),top=wrap.querySelector('.top');
     var label='Помощник раздела: '+scenes[key][1];
     var html='<button type="button" class="route-launch" data-a="routeAsk" data-v="'+E(key)+'" aria-label="'+E(label)+'" title="'+E(label)+'">'+X.I('spark')+'<span aria-hidden="true">ИИ</span></button>';
+    if(window.MIND&&focus()&&['calendar','habits','diary','notes','growth','skills','review'].includes(key)&&top){
+      html='<button type="button" class="route-launch cycle-return" data-a="mindJump" aria-label="Открыть проверку в Моём цикле" title="Мой цикл">'+X.I('repeat')+'<span aria-hidden="true">Цикл</span></button>'+html;
+    }
     if(top)(top.querySelector('.tbtns')||top).insertAdjacentHTML('beforeend',html);else wrap.insertAdjacentHTML('afterbegin','<div class="route-launch-fallback">'+html+'</div>');
   }
   function sheet(s){
@@ -98,6 +112,7 @@
     if(key==='habits'&&id){var habit=own(X.D.habits,id);if(habit){habitId=habit.id;title='Привычка · '+clean(habit.name,70);facts.push('Выбранная привычка «'+clean(habit.name)+'» (ID '+habitId+').');}}
     if(key==='tasks'&&id){var task=own(X.D.tasks,id);if(task){taskId=task.id;title='Задача · '+clean(task.title,70);facts.push('Выбранная задача «'+clean(task.title)+'» (ID '+taskId+').');}}
     if((key==='notes'||key==='diary')&&id){var note=own(X.D.notes,id);if(note){noteId=note.id;title='Моя заметка · '+clean(note.title||'без названия',70);facts.push('Выбрана моя заметка «'+clean(note.title||'без названия')+'».');}}
+    if(key==='diary'&&!noteId)facts.push(diaryFacts());
     if(h){facts.push('Активная цель, выбранная мной для цикла: «'+clean(h.title)+'» (ID '+h.id+').');if(key==='review'&&window.CYCLEWEEK&&goals().ok)facts.push(CYCLEWEEK.hint(h,goals()));}
     route.title=title;route.facts=facts;route.noteId=noteId;route.taskId=taskId;route.habitId=habitId;
     return route;
@@ -162,14 +177,15 @@
     if(r.key==='sos'&&A.wSos){A.wSos();if(r.sos&&A.wSosPick)A.wSosPick(r.sos);}
   }
   function stats(h,today){
-    var n=0,d=0,unknown=0;
-    if(h.paused||h.finished||!h.started_on)return{marked:0,scheduled:0,unknown:0};
+    if(X.habitEvidence)return X.habitEvidence(h,X.addDays(today,-7),X.addDays(today,-1));
+    var n=0,unknown=0;
+    if(!h.started_on)return{marked:0,unknown:0};
     for(var i=1;i<=7;i++){
-      var day=X.addDays(today,-i);if(day<h.started_on||!X.sched(h,day))continue;
-      if(!X.historyKnown('marks',day)){unknown++;continue;}
-      d++;if(X.cnt(h,day)>=X.tgt(h))n++;
+      var day=X.addDays(today,-i);if(day<h.started_on)continue;
+      if(X.cnt(h,day)>0)n++;
+      else if(!X.historyKnown('marks',day))unknown++;
     }
-    return{marked:n,scheduled:d,unknown:unknown};
+    return{marked:n,unknown:unknown};
   }
   function refs(g,kind){
     return g?(g[kind==='habit'?'link_habit_ids':'link_task_ids']||[]).map(function(id){return own(kind==='habit'?X.D.habits:X.D.tasks,id);}).filter(Boolean):[];
@@ -189,39 +205,39 @@
     var days=[];
     for(var i=6;i>=0;i--){
       var day=X.addDays(t,-i),count=X.cnt(h,day),scheduled=h.started_on&&day>=h.started_on&&X.sched(h,day),target=X.tgt(h);
-      var state=count>=target?'done':count?'part':!scheduled?'off':!X.historyKnown('marks',day)?'unknown':i?'blank':'today';
-      var title=state==='done'?'Выполнено':state==='part'?'Частичная отметка, '+count+' из '+target:state==='off'?'Не было в плане':state==='unknown'?'День загружен не полностью':state==='blank'?'Нет отметки':'Можно отметить сегодня';
+      var state=count>0&&i?'done':count>=target?'done':count?'part':!X.historyKnown('marks',day)?'unknown':i?'blank':!scheduled?'off':'today';
+      var title=i?(count>0?'Есть отметка ('+count+')':state==='unknown'?'Данные неполные':'Нет отметки'):
+        state==='done'?'На сегодня записано выполнение':state==='part'?'Сегодня '+count+' из '+target:state==='off'?'Сегодня не по плану':state==='unknown'?'Данные неполные':'Можно отметить сегодня';
       days.push('<li class="cycle-day '+state+'"'+(i?'':' aria-current="date"')+'><time datetime="'+E(day)+'">'+E(X.fromKey(day).getDate())+'</time><span>'+E(title)+'</span></li>');
     }
     return '<section class="cycle-week" aria-label="Отметки за семь дней"><h2>Семь дней · '+E(h.name)+'</h2><ol>'+days.join('')+'</ol></section>';
   }
   function hardDay(h,t){
     if(!h)return'';
-    var s=stats(h,t),tip=s.scheduled-s.marked>=2?'Есть дни без полной отметки. Если шаг был слишком большим, можно сделать его короче или выбрать меньше дней.':'Если сил мало, выбери посильный шаг или день отдыха. Не отмечай действие, которого не было.';
-    return '<details class="cycle-reset"><summary>Сегодня трудно? Упрости план</summary><p>'+E(tip)+'</p><div class="cycle-actions">'+btn('cycleLightEdit','Изменить объём или дни',h.id)+btn('cycleObstacle','Записать, что помешало')+ask('reset',h.id)+'</div><p class="muted">История отметок сохраняется. На календаре привычка показана по текущему расписанию.</p></details>';
+    return '<details class="cycle-reset"><summary>Сегодня трудно? Упрости план</summary><p>Другая обстановка, нехватка сил или слишком большой шаг — разные ситуации. Выбери подходящий вариант или отдых, не отмечая то, чего не было.</p><div class="cycle-actions">'+btn('cycleLightEdit','Изменить объём или дни',h.id)+btn('cycleObstacle','Записать, что помешало')+ask('reset',h.id)+'</div><p class="muted">История отметок сохраняется. В календаре видно текущее расписание, а не план прошлых дней.</p></details>';
   }
   function dashboard(){
     sync();
-    var data=goals(),g=focus(),active=data.goals.filter(function(r){return r.status==='active';}),tasks=refs(g,'task'),habits=refs(g,'habit'),t=X.T(),start=X.addDays(t,-6);
+    var data=goals(),g=focus(),active=data.goals.filter(function(r){return r.status==='active';}),tasks=refs(g,'task'),habits=refs(g,'habit'),t=X.T(),start=X.addDays(t,-7);
     var primary=habits.find(function(h){return !h.paused&&!h.finished;});
-    var practices=data.sessions.filter(function(r){return r.day>=start&&r.day<=t&&(!g||r.goal_id===g.id);});
-    var checkins=data.checkins.filter(function(r){return r.day>=start&&r.day<=t;}),next=nextAction(g,tasks,habits,t,data);
+    var practices=g?data.sessions.filter(function(r){return r.owner===X.ME&&r.day>=start&&r.day<t&&r.goal_id===g.id;}):[];
+    var next=nextAction(g,tasks,habits,t,data);
     var choose=active.length?'<label class="route-pick" for="cycle-goal"><span>Цель в фокусе</span><select id="cycle-goal" class="fld"><option value="-">Без выбранной цели</option>'+active.map(function(a){return '<option value="'+E(a.id)+'"'+(g&&a.id===g.id?' selected':'')+'>'+E(a.title)+'</option>';}).join('')+'</select></label>':'<div class="route-pick"><b>Начни с одной цели</b><span>'+(!data.ok?(data.error?'Не удалось загрузить цели.':'Цели загружаются…'):'Сформулируй результат, который можно проверить.')+'</span></div>';
-    var linked=habits.length||tasks.length?'<ul class="route-links">'+habits.map(function(h){var s=stats(h,t),progress=s.scheduled?s.marked+' из '+s.scheduled+' дней выполнено по отметкам':'Пока нет прошедших дней по расписанию';if(s.unknown)progress=s.scheduled?progress+' · часть периода не загружена':'Период загружен не полностью';return '<li>'+btn('grOpenHabit',E(h.name),h.id,null,'link')+'<span>'+E(h.finished?'Завершена':h.paused?'На паузе':progress)+'</span></li>';}).join('')+tasks.map(function(task){return '<li>'+btn('grOpenTask',E(task.title),task.id,null,'link')+'<span>'+E(task.done?'Выполнена':task.due_date?'План · '+X.fmtDM(task.due_date):'Без срока')+'</span></li>';}).join('')+'</ul>':'<p class="muted">Свяжи задачу или привычку с целью в её карточке либо из подтверждённых предложений.</p>';
+    var linked=habits.length||tasks.length?'<ul class="route-links">'+habits.map(function(h){var s=stats(h,t),progress=s.marked?s.marked+' '+X.plural(s.marked,'день','дня','дней')+' с записью':'Нет записей в загруженной истории';if(s.unknown)progress+=' · часть не загружена';return '<li>'+btn('grOpenHabit',E(h.name),h.id,null,'link')+'<span>'+E((h.finished?'Завершена · ':h.paused?'На паузе · ':'')+progress)+'</span></li>';}).join('')+tasks.map(function(task){return '<li>'+btn('grOpenTask',E(task.title),task.id,null,'link')+'<span>'+E(task.done?'Выполнена':task.due_date?'План · '+X.fmtDM(task.due_date):'Без срока')+'</span></li>';}).join('')+'</ul>':'<p class="muted">Свяжи задачу или привычку с целью в её карточке либо из подтверждённых предложений.</p>';
     return '<section class="cycle-view"><div class="cycle-hero"><div class="cycle-kicker"><i></i> НЕДЕЛЬНЫЙ ЦИКЛ</div><h1>Мой цикл</h1><p>Выбери одну цель, найди маленькое действие и через неделю реши, что оставить. Пропуски — повод упростить план, а не начинать с нуля.</p><div class="cycle-actions">'+(!g&&data.ok&&window.CYCLESTART&&!CYCLESTART.isOpen()?CYCLESTART.launch(g)+ask('cycle'):ask('cycle',null,'primary'))+ask('reset')+'</div></div>'+
       '<div class="cycle-focus">'+choose+(g?btn('routeGoal','Открыть цель',g.id):btn('appGrowthTab','Открыть цели','goals'))+'</div>'+
       (data.ok&&window.CYCLESTART?CYCLESTART.view(g):'')+
       '<div class="cycle-next"><div><h2 id="cycle-next-title" tabindex="-1">С чего начать сегодня</h2><p>'+E(next[0])+'</p></div><div class="cycle-actions">'+next[1]+'</div></div>'+
-      weekStrip(primary,t)+hardDay(primary,t)+
+      (g&&data.ok&&window.MIND?MIND.view(g):'')+weekStrip(primary,t)+hardDay(primary,t)+
       '<div class="cycle-grid">'+stage('01','План','Один результат и один посильный шаг. Проверь, есть ли для него время.',btn('go','Задачи','tasks')+btn('go','Календарь','calendar'))+
       stage('02','Повторение','Связанные действия. Для привычек показаны отметки за семь завершённых дней, а не оценка усилий.',btn('go','Привычки','habits')+ask('habits'),linked)+
-      stage('03','Что получилось','За 7 дней: '+practices.length+' '+X.plural(practices.length,'занятие','занятия','занятий')+(g?' по цели':'')+' и '+checkins.length+' '+X.plural(checkins.length,'отметка состояния','отметки состояния','отметок состояния')+'.',btn('appGrowthTab','Записать практику','skills')+btn('appGrowthTab','Отметить состояние','checkin'))+
+      stage('03','Что получилось',g?'За семь завершённых дней: '+practices.length+' '+X.plural(practices.length,'занятие','занятия','занятий')+' по цели. Состояние записывается отдельно — это контекст, не балл.':'Выбери цель, чтобы видеть только связанную практику. Без фокуса результаты разных целей не смешиваются.',btn('appGrowthTab','Записать практику','skills')+btn('appGrowthTab','Отметить состояние','checkin'))+
       stage('04','Коррекция','Проверь факты. Реши, что оставить, упростить или заменить.',(g&&data.ok&&window.CYCLEWEEK?'<button id="cycle-review-open" class="btn2" type="button" data-a="cycleReviewOpen" data-v="'+E(g.id)+'">Подвести итог</button>':btn('appGrowthTab','Обзор недели','review'))+ask('review'),g&&g.due_day?'<p class="muted">Ориентир цели: '+E(X.fmtDM(g.due_day))+'</p>':'')+'</div>'+((g&&window.CYCLEWEEK)?CYCLEWEEK.view(g,data):'')+
       '<div class="cycle-tools"><h2>Контекст для плана</h2><div class="cycle-actions">'+['inbox','diary','notes','food','fit','well','support'].map(function(k){return btn('go',X.I(scenes[k][3])+E(scenes[k][0]),k);}).join('')+'</div></div></section>';
   }
   function homeCard(){
-    var g=focus();
-    return '<section class="route-bar" aria-label="Мой цикл"><div><strong>'+X.I('repeat')+'Мой цикл</strong><small>'+E(g?'В фокусе: '+clean(g.title,160):'Одна цель, один небольшой шаг, один обзор в неделю')+'</small></div>'+btn('go','Открыть цикл','cycle')+'</section>';
+    var g=focus(),p=g&&window.MIND&&MIND.home(g);
+    return '<section class="route-bar" aria-label="Мой цикл"><div><strong>'+X.I('repeat')+'Мой цикл</strong><small>'+E(p&&p.planned?'Сегодня в проверке: '+clean(p.action,120):g?'В фокусе: '+clean(g.title,160):'Одна цель, один небольшой шаг, один обзор в неделю')+'</small></div>'+btn('go','Открыть цикл','cycle')+'</section>';
   }
   function stage(n,title,body,actions,extra){
     return '<article class="cycle-stage"><div class="cycle-index">'+n+'</div><h2>'+title+'</h2><p>'+E(body)+'</p>'+(extra||'')+'<div class="cycle-actions">'+actions+'</div></article>';

@@ -339,9 +339,47 @@ function tgt(h){return Math.max(1,h.target||1);}
 function cnt(h,d){return (D.marks[h.id]||{})[d]||0;}
 function hDone(h,d){return cnt(h,d)>=tgt(h);}
 function sched(h,d){return !h.days||!h.days.length||h.days.indexOf(dow(d))>=0;}
-function streak(h){var d=T(),n=0,g=0;if(sched(h,d)&&!hDone(h,d))d=addDays(d,-1);while(d>=h.started_on&&g++<800){if(sched(h,d)){if(hDone(h,d))n++;else break;}d=addDays(d,-1);}return n;}
-function pct(h){var d=h.started_on,t=T(),a=0,o=0,g=0;if(diff(t,d)>400)d=addDays(t,-400);while(d<=t&&g++<420){if(sched(h,d)){a++;if(hDone(h,d))o++;}d=addDays(d,1);}return a?Math.round(o*100/a):0;}
-function totalDone(h){var m=D.marks[h.id]||{};return Object.keys(m).filter(function(d){return m[d]>=tgt(h);}).length;}
+function observedHabitCount(h,day){var n=Number(cnt(h,day));return Number.isFinite(n)&&n>0?n:0;}
+function habitsHistoryKnown(day){return day>=addDays(T(),-400)&&historyKnown('marks',day);}
+// Historical settings are not versioned. Count the recorded facts, never
+// judge them using today's target, weekdays or pause setting.
+function habitEvidence(h,from,to){
+  var yesterday=addDays(T(),-1),end=to&&to<yesterday?to:yesterday,start=from||addDays(end,-6);
+  var length=diff(end,start)+1,r={start:start,end:end,days:0,marked:0,amount:0,unrecorded:0,unknown:0};
+  if(!Number.isFinite(length)||length<1)return r;
+  if(length>400){start=addDays(end,-399);r.start=start;length=400;}
+  for(var i=0;i<length;i++){
+    var day=addDays(start,i),n=observedHabitCount(h,day);
+    if(!n&&h.started_on&&day<h.started_on)continue;
+    r.days++;
+    var known=habitsHistoryKnown(day);
+    if(!known)r.unknown++;
+    if(n){r.marked++;r.amount+=n;}
+    else if(known)r.unrecorded++;
+  }
+  return r;
+}
+function habitCell(h,day){
+  var t=T(),n=observedHabitCount(h,day);
+  if(day>t)return {cls:'outside',mark:'—',label:'Будущий день'};
+  if(day===t){
+    var today=h.finished?'Завершена':h.paused?'На паузе':h.started_on&&day<h.started_on?'Ещё не началась':!sched(h,day)?'Сегодня не запланирована':'';
+    if(n)return {cls:'now fact '+(n>=tgt(h)?'full':'partial'),mark:n>=tgt(h)?'✓':'◐',label:(today?today+' · ':'')+'Сегодня записано: '+n+' из '+tgt(h)+' по текущему плану'};
+    if(today)return {cls:'now outside',mark:'—',label:today};
+    if(!habitsHistoryKnown(day))return {cls:'now unknown',mark:'?',label:'Сегодня: история загружена не полностью'};
+    return {cls:'now',mark:'·',label:'Сегодня запланировано · без отметки'};
+  }
+  if(n)return {cls:'fact',mark:'✓',label:'Записано: '+n};
+  if(h.started_on&&day<h.started_on)return {cls:'outside',mark:'—',label:'До начала привычки'};
+  if(!habitsHistoryKnown(day))return {cls:'unknown',mark:'?',label:'История за этот день загружена не полностью'};
+  return {cls:'',mark:'·',label:'Без отметки'};
+}
+function habitEvidenceLabel(r){
+  if(!r.days)return 'Нет завершённых дней';
+  if(!r.marked&&r.unknown)return r.unrecorded?'В загруженных днях отметок нет':'История загружена не полностью';
+  if(!r.marked)return 'Без отметок';
+  return (r.unknown?'Известно: ':'')+r.marked+' '+plural(r.marked,'день','дня','дней')+' с отметками';
+}
 async function setMark(h,day,val){
   if(diff(day,T())>0)return;val=Math.max(0,Math.min(val,tgt(h)));
   var m=D.marks[h.id]=D.marks[h.id]||{};var before=m[day]||0;
@@ -530,7 +568,7 @@ function inboxView(){
 /* календарь */
 function tasksOn(k){return myTasks().filter(function(t){return t.due_date===k&&!hiddenTask(t);}).sort(sorter);}
 function logOn(k){return D.log.filter(function(l){return l.day===k&&l.user_id===ME;});}
-function habitsDoneOn(k){return D.habits.filter(function(h){return hDone(h,k);});}
+function habitsRecordedOn(k){return D.habits.filter(function(h){return h.owner===ME&&observedHabitCount(h,k)>0;});}
 function calView(){
   var k=UI.calDay,t=T(),mode=UI.cal;
   var modes=[['day','День'],['week','Неделя'],['month','Месяц'],['year','Год']];
@@ -544,12 +582,17 @@ function calView(){
     var mon=addDays(k,-dow(k));h+='<div class="week">';
     for(var i=0;i<7;i++){var d=addDays(mon,i),busy=tasksOn(d).length||logOn(d).length;h+='<button class="wd'+(d===t?' today':'')+(d===k?' sel':'')+'" data-a="calPick" data-v="'+d+'" aria-label="'+fmtLong(d)+'"><small>'+WD[i]+'</small><b>'+fromKey(d).getDate()+'</b><i class="'+(busy?'y':'')+'"></i></button>';}
     h+='</div>';
-    var hs=D.habits.filter(function(x){return !x.finished&&x.started_on<=k&&sched(x,k);});
-    if(hs.length&&k<=t){h+=sec('Привычки','');hs.forEach(function(x){var on=hDone(x,k);h+='<div class="task"><button class="chk'+(on?' on':'')+'" data-a="habDay" data-id="'+x.id+'" data-v="'+k+'" aria-label="'+esc(x.name)+'"><span style="'+(on?'background:'+esc(x.color)+';border-color:'+esc(x.color):'')+'">'+(on?I('check'):'')+'</span></button><div class="tb"><span class="tt">'+esc(x.name)+'</span>'+(tgt(x)>1?'<span class="meta"><span>'+cnt(x,k)+' из '+tgt(x)+'</span></span>':'')+'</div></div>';});}
+    var hs=D.habits.filter(function(x){return (k<=t&&observedHabitCount(x,k)>0)||(!x.finished&&(k<t||!x.paused)&&(!x.started_on||x.started_on<=k)&&sched(x,k));});
+    if(hs.length){h+=sec(k<t?'Отметки привычек':k>t?'План привычек':'Привычки сегодня','');
+      if(k<t)h+='<p class="hint">Без отметки — не обязательно пропуск. Привычки без записей показаны по текущему расписанию.</p>';
+      hs.forEach(function(x){var cell=habitCell(x,k),on=k===t?hDone(x,k):observedHabitCount(x,k)>0;
+      var ctrl=k<=t?'<button class="chk'+(on?' on':'')+'" data-a="habDay" data-id="'+x.id+'" data-v="'+k+'"'+(cell.mark==='?'?' disabled':'')+' aria-label="'+esc(x.name+' · '+cell.label)+'"><span style="'+(on?'background:'+esc(x.color)+';border-color:'+esc(x.color):'')+'">'+(on?I('check'):'')+'</span></button>':'';
+      h+='<div class="task">'+ctrl+'<div class="tb"><span class="tt">'+esc(x.name)+'</span><span class="meta"><span>'+esc(k>t?'По текущему расписанию':cell.label)+'</span></span></div></div>';});}
     var ts=tasksOn(k),lg=logOn(k);
     if(ts.length){h+=sec('Запланировано','');ts.forEach(function(x){h+=taskRow(x,k<t?'overdue':k===t?'today':'later');});}
     if(lg.length){h+=sec('Сделано','');lg.forEach(function(l){h+='<div class="drow"><span class="b">'+I('check')+'</span><div class="dt"><span class="dtx open">'+esc(l.title)+'</span></div>'+logUndoBtn(l)+'<span class="at">'+new Date(l.created_at).toTimeString().slice(0,5)+'</span></div>';});}
-    if(!hs.length&&!ts.length&&!lg.length)h+='<div class="empty">На этот день ничего нет.</div>';
+    if(!hs.length&&!ts.length&&!lg.length)h+='<div class="empty">'+(k<t?'Нет записей на этот день.':'На этот день ничего не запланировано.')+'</div>';
+    if(k<t&&(!habitsHistoryKnown(k)||k<addDays(t,-400)||!historyKnown('log',k)))h+='<p class="hint">История за этот день загружена не полностью.</p>';
   }else if(mode==='week'){
     var m0=addDays(k,-dow(k));h+='<div class="wcols">';
     for(var j=0;j<7;j++){var dd=addDays(m0,j);h+='<div class="wcol"><h4 class="'+(dd===t?'t':'')+'"><button data-a="calPickDay" data-v="'+dd+'">'+WD[j]+', '+fromKey(dd).getDate()+'</button></h4>'+tasksOn(dd).map(function(x){return '<button class="it'+(x.done?' d':'')+'" data-a="open" data-id="'+x.id+'">'+(x.due_time?x.due_time+' ':'')+esc(x.title)+'</button>';}).join('')+logOn(dd).filter(function(l){return !tasksOn(dd).some(function(x){return x.id===l.task_id;});}).map(function(l){return '<div class="it d">'+esc(l.title)+'</div>';}).join('')+'</div>';}
@@ -563,33 +606,57 @@ function calView(){
     var y=fromKey(k).getFullYear();h+='<div class="year">';
     for(var mo=0;mo<12;mo++){var f=keyOf(new Date(y,mo,1)),last=new Date(y,mo+1,0).getDate();h+='<div class="ym"><h4>'+fmt(f,{month:'long'})+'</h4><div class="g">';
       for(var e=0;e<dow(f);e++)h+='<span class="e"></span>';
-      for(var dd2=1;dd2<=last;dd2++){var kk=keyOf(new Date(y,mo,dd2)),sc=logOn(kk).length+habitsDoneOn(kk).length,lv=sc===0?'':sc<2?'l1':sc<4?'l2':'l3';h+='<span class="'+lv+(kk===t?' t':'')+'" title="'+fmtDM(kk)+': '+sc+'"></span>';}
+      for(var dd2=1;dd2<=last;dd2++){var kk=keyOf(new Date(y,mo,dd2)),sc=kk>t?0:logOn(kk).length+habitsRecordedOn(kk).length,lv=sc===0?'':sc<2?'l1':sc<4?'l2':'l3';
+        var alt=kk>t?'Будущий день':(!habitsHistoryKnown(kk)||!historyKnown('log',kk)?'История неполная · загружено: ':'Записей: ')+sc;
+        h+='<span class="'+lv+(kk===t?' t':'')+'" title="'+esc(fmtDM(kk)+' · '+alt)+'"></span>';}
       h+='</div></div>';}
-    h+='</div><div class="hint">Чем темнее день, тем больше сделано задач и привычек</div>';
+    h+='</div><div class="hint">Цвет показывает число записей о задачах и привычках, а не результат дня. Пустая ячейка — нет загруженных отметок или день ещё не наступил.</div>';
   }
   return h;
 }
 function logUndoBtn(l){var t=l.task_id&&findTask(l.task_id);return t&&t.done&&t.recur==='none'?'<button class="iconbtn dundo" data-a="logUndo" data-id="'+l.id+'" aria-label="Вернуть в работу" title="Вернуть в работу">'+I('left')+'</button>':'';}
+function diaryFacts(from,to){
+  var end=to&&to<T()?to:addDays(T(),-1),start=from||addDays(end,-6);
+  var r={start:start,end:end,tasks:0,habitDays:0,habitMarks:0,historyPartial:false};
+  if(start>end)return r;
+  if(diff(end,start)>399){start=addDays(end,-399);r.start=start;r.historyPartial=true;}
+  r.historyPartial=r.historyPartial||!habitsHistoryKnown(start)||!historyKnown('log',start);
+  r.tasks=D.log.filter(function(l){return l.user_id===ME&&l.day>=start&&l.day<=end;}).length;
+  D.habits.forEach(function(h){
+    if(h.owner!==ME)return;
+    var f=habitEvidence(h,start,end);
+    r.habitDays+=f.marked;r.habitMarks+=f.amount;
+  });
+  return r;
+}
 function diaryView(){
-  var days={};
-  D.log.filter(function(l){return l.user_id===ME;}).forEach(function(l){var tk=l.task_id&&findTask(l.task_id);(days[l.day]=days[l.day]||[]).push({id:l.id,t:l.title,at:new Date(l.created_at).toTimeString().slice(0,5),subs:tk&&tk.subs&&tk.subs.length?tk.subs:null,undo:logUndoBtn(l)});});
-  D.habits.forEach(function(h){var m=D.marks[h.id]||{};Object.keys(m).forEach(function(d){if(m[d]>=tgt(h))(days[d]=days[d]||[]).push({t:h.name,at:'',c:h.color});});});
+  var days={},t=T();
+  D.log.filter(function(l){return l.user_id===ME&&l.day<=t;}).forEach(function(l){var tk=l.task_id&&findTask(l.task_id);(days[l.day]=days[l.day]||[]).push({id:l.id,t:l.title,at:new Date(l.created_at).toTimeString().slice(0,5),subs:tk&&tk.subs&&tk.subs.length?tk.subs:null,undo:logUndoBtn(l)});});
+  D.habits.forEach(function(h){if(h.owner!==ME)return;var m=D.marks[h.id]||{};Object.keys(m).forEach(function(d){var n=observedHabitCount(h,d);if(n&&d<=t)(days[d]=days[d]||[]).push({t:h.name,at:'',c:h.color,n:n});});});
   var keys=Object.keys(days).sort().reverse();
-  var h='<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">Дневник</h1></div></div>';
-  if(!keys.length)return h+'<div class="empty">Здесь по дням будут выполненные задачи и привычки.</div>';
-  keys.slice(0,90).forEach(function(k){var d=diff(k,T());h+='<div class="dday">'+(d===0?'Сегодня':d===-1?'Вчера':fmtDM(k))+'</div>';days[k].forEach(function(x){var open=x.id&&UI.dopen===x.id;h+='<div class="drow"><span class="b"'+(x.c?' style="background:'+esc(x.c)+'"':'')+'>'+I('check')+'</span><div class="dt"><button type="button" class="dtx'+(open?' open':'')+'" data-a="dTog" data-v="'+(x.id||'')+'">'+esc(x.t)+'</button>'+(x.subs?'<div class="dsubs">'+x.subs.map(function(s){return '<div class="dsub'+(s.done?' done':'')+'">'+(s.done?'✓':'○')+' '+esc(s.t)+'</div>';}).join('')+'</div>':'')+'</div>'+(x.undo||'')+'<span class="at">'+x.at+'</span></div>';});});
+  var h='<div class="top"><div><div class="date">'+fmtLong(t)+'</div><h1 class="dh">Дневник</h1></div></div>'+
+    '<p class="hint">События задач и привычек. Здесь только сделанные отметки; отсутствие записи не означает пропуск. Личные записи дня находятся в «Заметках».</p>';
+  if(D.history.log||D.history.marks)h+='<p class="hint">Часть ранней истории может быть не загружена.</p>';
+  if(!keys.length)return h+'<div class="empty">Нет загруженных отметок о задачах и привычках.</div>';
+  keys.slice(0,90).forEach(function(k){var d=diff(k,t);h+='<div class="dday">'+(d===0?'Сегодня · день ещё идёт':d===-1?'Вчера':fmtDM(k))+'</div>';days[k].forEach(function(x){
+    var open=x.id&&UI.dopen===x.id, title=x.id?'<button type="button" class="dtx'+(open?' open':'')+'" data-a="dTog" data-v="'+esc(x.id)+'">'+esc(x.t)+'</button>':'<span class="dtx open">'+esc(x.t)+'</span>';
+    h+='<div class="drow"><span class="b"'+(x.c?' style="background:'+esc(x.c)+';color:'+onColor(x.c)+'"':'')+'>'+I(x.id?'check':'drop')+'</span><div class="dt">'+title+
+      '<span class="meta"><span>'+esc(x.id?'Задача · отметка выполнения':'Привычка · записано: '+x.n)+'</span></span>'+
+      (x.subs?'<div class="dsubs">'+x.subs.map(function(s){return '<div class="dsub'+(s.done?' done':'')+'">'+(s.done?'✓':'○')+' '+esc(s.t)+'</div>';}).join('')+'</div>':'')+'</div>'+(x.undo||'')+'<span class="at">'+x.at+'</span></div>';});});
   return h;
 }
-function habRate(h){var t=T(),n=0,d=0;for(var i=0;i<30;i++){var k=addDays(t,-i);if(k<h.started_on||!sched(h,k))continue;n++;if(hDone(h,k))d++;}return n?Math.round(d*100/n):0;}
 function habitsView(){
   var h='<div class="top"><div><div class="date">'+fmtLong(T())+'</div><h1 class="dh">Привычки</h1></div><button class="btn2" data-a="habNew">'+I('plus')+'Новая</button></div>';
   if(window.PLANBOT)h+=PLANBOT.habitsPanel();
   var hs=D.habits.filter(function(x){return !x.finished;});
   if(!hs.length)return h+'<div class="empty">Привычек пока нет. Нажми «Новая».</div>';
   var t=T(),ND=isPC()?14:7,mon=addDays(t,-(ND-1));
+  h+='<p class="hint">Сводка за 7 завершённых дней. ✓ — есть отметка, ◐ — часть сегодняшнего плана, · — без отметки, ? — неполные данные, — вне плана сегодня или до начала.</p>';
   if(isPC()){h+='<div class="habhead"><div class="habdays">';for(var q2=0;q2<ND;q2++){var dq=addDays(mon,q2);h+='<span class="'+(dq===t?'now':'')+'">'+WD[dow(dq)]+'<b>'+fromKey(dq).getDate()+'</b></span>';}h+='</div></div>';}
-  hs.forEach(function(x){h+='<div class="task habrow"><button class="tb" data-a="habOpen" data-id="'+x.id+'"><span class="tt" style="display:flex;align-items:center;gap:10px"><span style="color:'+esc(x.color)+'">'+I(x.icon)+'</span>'+esc(x.name)+'</span><span class="meta"><span>'+daysText(x)+'</span><span>'+streak(x)+' '+plural(streak(x),'день','дня','дней')+' подряд</span>'+(isPC()?'<span>'+habRate(x)+'% за 30 дней</span>':'')+(x.paused?'<span>на паузе</span>':'')+'</span></button><div class="habdays">';
-    for(var i=0;i<ND;i++){var d=addDays(mon,i),on=hDone(x,d);h+='<button data-a="habDay" data-id="'+x.id+'" data-v="'+d+'" aria-label="'+fmtLong(d)+'" style="width:28px;height:28px;border-radius:50%;'+(on?'background:'+esc(x.color):'border:1.5px '+(sched(x,d)?'solid':'dashed')+' var(--line)')+'"></button>';}
+  hs.forEach(function(x){var evidence=habitEvidence(x),today=habitCell(x,t);
+    h+='<div class="task habrow"><button class="tb" data-a="habOpen" data-id="'+x.id+'"><span class="tt" style="display:flex;align-items:center;gap:10px"><span style="color:'+esc(x.color)+'">'+I(x.icon)+'</span>'+esc(x.name)+'</span><span class="meta"><span>'+esc(x.paused?'На паузе':'План сейчас: '+daysText(x))+'</span><span>'+esc(habitEvidenceLabel(evidence))+'</span></span><span class="meta"><span>'+esc(x.paused&&today.label==='На паузе'?'Сегодня новых действий нет':today.label)+'</span></span></button><div class="habdays">';
+    for(var i=0;i<ND;i++){var d=addDays(mon,i),cell=habitCell(x,d);
+      h+='<button class="'+cell.cls+'" data-a="habDay" data-id="'+x.id+'" data-v="'+d+'"'+(cell.mark==='?'?' disabled':'')+' aria-label="'+esc(fmtLong(d)+' · '+cell.label)+'" style="--hc:'+esc(x.color)+';--on-hc:'+onColor(x.color)+'"><span aria-hidden="true">'+cell.mark+'</span></button>';}
     h+='</div></div>';});
   return h;
 }
@@ -1052,11 +1119,17 @@ function habitForm(d){
 }
 function habitDetail(hb,off){
   var t=T(),c=cnt(hb,t),done=hDone(hb,t),base=addDays(t,off),mon=addDays(base,-dow(base));
-  var sub=hb.paused?'На паузе':!sched(hb,t)?'Сегодня день отдыха':done?'Сегодня сделано':tgt(hb)>1?'Осталось '+(tgt(hb)-c)+' из '+tgt(hb):'Сделай это сегодня';
+  var sub=habitCell(hb,t).label,ev=habitEvidence(hb,mon,addDays(mon,6));
   var h='<div class="hdtl" style="--hc:'+esc(hb.color)+';--on-hc:'+onColor(hb.color)+'"><div class="ctl"><button class="pm" data-a="habMinus" data-id="'+hb.id+'" aria-label="Минус одно">−</button><button class="big'+(done?' done':'')+'" data-a="habPlus" data-id="'+hb.id+'" aria-label="Плюс одно">'+I(hb.icon)+'<b>'+c+'/'+tgt(hb)+'</b></button><button class="pm" data-a="habPlus" data-id="'+hb.id+'" aria-label="Плюс одно">+</button></div><div style="font-size:21px;font-weight:600">'+esc(hb.name)+'</div><div class="muted">'+sub+'</div></div>';
   h+='<div style="--hc:'+esc(hb.color)+';--on-hc:'+onColor(hb.color)+'"><div class="calnav" style="margin:0 0 10px"><button class="iconbtn" data-a="hwk" data-v="-7" aria-label="Прошлая неделя">'+I('left')+'</button><b>'+fmt(addDays(mon,3),{month:'long'})+'</b><button class="iconbtn" data-a="hwk" data-v="7" aria-label="Следующая неделя"'+(off>=0?' disabled style="opacity:.3"':'')+'>'+I('right')+'</button></div><div class="hweek">';
-  for(var i=0;i<7;i++){var k=addDays(mon,i);h+='<div><small>'+WD[i]+'</small><button class="'+(hDone(hb,k)?'on ':'')+(k===t?'t ':'')+(sched(hb,k)?'':'skip')+'" data-a="habDay" data-id="'+hb.id+'" data-v="'+k+'"'+(k>t?' disabled':'')+' aria-label="'+fmtLong(k)+'">'+fromKey(k).getDate()+'</button></div>';}
-  h+='</div></div><div class="stats"><div><b>'+streak(hb)+'</b><small>подряд</small></div><div><b>'+pct(hb)+'%</b><small>выполнение</small></div><div><b>'+totalDone(hb)+'</b><small>всего</small></div></div>';
+  for(var i=0;i<7;i++){var k=addDays(mon,i),cell=habitCell(hb,k);h+='<div><small>'+WD[i]+'</small><button class="'+cell.cls+(cell.cls.indexOf('outside')>=0?' skip':'')+(k===t?' t':'')+'" data-a="habDay" data-id="'+hb.id+'" data-v="'+k+'"'+(k>t||cell.mark==='?'?' disabled':'')+' aria-label="'+esc(fmtLong(k)+' · '+cell.label)+'"><span>'+fromKey(k).getDate()+'</span><small aria-hidden="true">'+cell.mark+'</small></button></div>';}
+  h+='</div></div>';
+  if(ev.days){
+    var observed=ev.unknown&&!ev.marked&&!ev.unrecorded?'—':String(ev.marked);
+    var amount=observed==='—'?'—':String(ev.amount);
+    h+='<p class="hint">Записи за завершённые дни выбранной недели · '+esc(fmtDM(ev.start))+' — '+esc(fmtDM(ev.end))+'. Исторические отметки не сравниваются с текущим планом.</p>'+
+      '<div class="stats"><div><b>'+observed+'</b><small>Дней с отметками</small></div><div><b>'+amount+'</b><small>Действий записано</small></div><div><b>'+ev.unknown+'</b><small>Дней с неполными данными</small></div></div>';
+  }else h+='<p class="hint">В выбранной неделе пока нет завершённых дней с начала привычки.</p>';
   h+='<div class="fields"><div class="fr">'+I('bell')+'<span>Напоминание</span><b style="font-weight:500">'+(hb.remind?[hb.remind].concat(hb.remind_at||[]).join(', ')+(hb.remind_every?', потом каждые '+hb.remind_every+' мин':''):'нет')+'</b></div><div class="fr">'+I('cal')+'<span>Дни</span><b style="font-weight:500">'+daysText(hb)+'</b></div><div class="fr">'+I('star')+'<span>В день</span><b style="font-weight:500">'+tgt(hb)+' '+plural(tgt(hb),'раз','раза','раз')+'</b></div></div>';
   return h;
 }
@@ -1278,7 +1351,7 @@ var A={
   habOpen:function(v,id){UI.sheet={type:'habit',id:id,off:0};renderSheet(true);},
   habTap:async function(v,id){var h=findHabit(id),t=T();if(h.paused||!sched(h,t)){A.habOpen(v,id);return;}
     var c=cnt(h,t);if(c>=tgt(h)){if(await setMark(h,t,0)===null)return;toast('Отметка снята: '+h.name,function(){setMark(h,t,c);});}
-    else{if(await setMark(h,t,c+1)===null)return;toast(c+1>=tgt(h)?(SET.rewards?'Отлично! ':'')+h.name+': выполнено'+(SET.rewards&&streak(h)>1?', '+streak(h)+' '+plural(streak(h),'день','дня','дней')+' подряд':''):h.name+': '+(c+1)+' из '+tgt(h),function(){setMark(h,t,c);});}},
+    else{if(await setMark(h,t,c+1)===null)return;toast(c+1>=tgt(h)?(SET.rewards?'Отлично! ':'')+h.name+': выполнено по сегодняшнему плану':h.name+': '+(c+1)+' из '+tgt(h),function(){setMark(h,t,c);});}},
   habPlus:function(v,id){var h=findHabit(id);setMark(h,T(),cnt(h,T())+1);},
   habMinus:function(v,id){var h=findHabit(id);setMark(h,T(),cnt(h,T())-1);},
   habDay:function(v,id){var h=findHabit(id);setMark(h,v,hDone(h,v)?0:tgt(h));},
@@ -1474,7 +1547,7 @@ window.__app={A:A,UI:UI,D:D,parseQuick:parseQuick,nextOcc:nextOcc,
   T:T,addDays:addDays,diff:diff,fromKey:fromKey,fmtLong:fmtLong,fmtDM:fmtDM,dayWord:dayWord,esc:esc,uid:uid,plural:plural,I:I,nowHM:nowHM,
   toast:toast,err:err,q:q,sb:sb,SUPA_URL:SUPA_URL,SUPA_KEY:SUPA_KEY,render:render,renderSheet:renderSheet,closeSheet:closeSheet,renderNote:renderNote,saveDraft:saveDraft,loadAll:loadAll,
   navClock:function(){return TP;},restoreClock:function(s){TP=s;tpRender();},
-  setMark:setMark,tgt:tgt,sched:sched,cnt:cnt,historyKnown:historyKnown,COLORS:COLORS,WD:WD,askAssistant:askAssistant,
+  setMark:setMark,tgt:tgt,sched:sched,cnt:cnt,historyKnown:historyKnown,habitEvidence:habitEvidence,diaryFacts:diaryFacts,COLORS:COLORS,WD:WD,askAssistant:askAssistant,
   AS:AS,asSave:asSave,asLoad:asLoad,closeNote:closeNote,asAddTask:asAddTask,createTask:createTask,patchTask:patchTask,completeTask:completeTask,reopenTask:reopenTask,deleteTask:deleteTask,findTask:findTask,saveSettings:saveSettings,aiWaitRemaining:aiWaitRemaining,aiSetWait:aiSetWait};
 Object.defineProperty(window.__app,'ME',{get:function(){return ME;}});
 Object.defineProperty(window.__app,'SET',{get:function(){return SET;}});
